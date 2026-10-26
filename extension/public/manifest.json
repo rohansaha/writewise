@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "WriteWise – grammar fixer & AI prompt helper",
   "version": "0.1.0",
-  "description": "Free, private spelling and grammar fixes in any text box, auto-fix as you type on AI chat sites, and one-click structured prompts. Runs entirely in your browser.",
+  "description": "Free, private spelling and grammar fixes in any text box, auto-fix as you type on AI chat sites, and one-click structured prompts.",
   "permissions": ["storage", "activeTab"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [

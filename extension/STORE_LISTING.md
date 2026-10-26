@@ -2,8 +2,8 @@
 
 **Name:** WriteWise – grammar fixer & AI prompt helper
 
-**Summary (132 chars max):**
-Free, private spelling & grammar fixes in any text box, auto-fix as you type on AI chats, one-click structured prompts.
+**Summary (132 chars max, taken from the manifest `description`):**
+Free, private spelling and grammar fixes in any text box, auto-fix as you type on AI chat sites, and one-click structured prompts.
 
 **Category:** Productivity → Writing
 
@@ -39,6 +39,15 @@ Privacy: everything runs inside your browser. The extension makes no network req
   4. `4-chat-autofix.png` – auto-fix as you type with the "4 fixes applied" toast
 - Small promo tile: `promo-440x280.png` (440×280)
 - Package: `release/writewise-chrome-extension-0.1.0.zip` (built with `npm run pack:ext`)
+
+## Dashboard status (2026-10-26)
+
+Draft item created under publisher rohansaha2222@gmail.com: ID `hmdpffagdonhmmgdcohmbkjcijiieicn`
+(https://chrome.google.com/webstore/devconsole/8dd23e74-0276-4186-a8d8-5a23628e02df/hmdpffagdonhmmgdcohmbkjcijiieicn/edit).
+Done in the dashboard: package 0.1.0 uploaded, description, homepage/support URLs, icon, 4 screenshots, small promo tile,
+single purpose + permission justifications, "no remote code", privacy policy URL, distribution free/public/all regions.
+Still needed before "Submit for review": Category = Productivity, Language = English, the three data-usage
+certifications on the Privacy tab, and a verified publisher contact email on the Settings page.
 
 ## Submitting (about 10 minutes in the dashboard)
 
