@@ -1,0 +1,1 @@
+export const AI_SITES = ['claude.ai', 'chatgpt.com', 'chat.openai.com', 'gemini.google.com', 'perplexity.ai', 'copilot.microsoft.com', 'poe.com', 'grok.com', 'chat.mistral.ai', 'huggingface.co', 'chat.deepseek.com', 'you.com']

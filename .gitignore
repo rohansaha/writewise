@@ -1,0 +1,8 @@
+node_modules
+dist
+dev-dist
+release
+.DS_Store
+*.log
+bin
+extension-dist

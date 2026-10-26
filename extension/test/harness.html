@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><title>WriteWise extension harness</title>
+  <style>body{font-family:sans-serif;padding:24px;max-width:720px} textarea,[contenteditable]{width:100%;min-height:90px;border:1px solid #999;padding:8px;font-size:15px;margin:8px 0 20px}</style></head>
+  <body>
+    <h1>Extension harness</h1>
+    <p>Loads the content script with the engine running in-page instead of the service worker.</p>
+    <label>Textarea</label>
+    <textarea id="ta"></textarea>
+    <label>Contenteditable (like a chat composer)</label>
+    <div id="ce" contenteditable="true"></div>
+    <label>Password (must be ignored)</label>
+    <input id="pw" type="password" />
+    <script type="module" src="./harness.ts"></script>
+  </body>
+</html>

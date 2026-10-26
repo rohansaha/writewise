@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WriteWise</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { width: 340px; margin: 0; padding: 14px; font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fff; color: #1a1f29; }
+      @media (prefers-color-scheme: dark) { body { background: #161a20; color: #e7eaef; } textarea { background: #1c2129; color: inherit; } .btn { background: #1c2129; color: inherit; } }
+      h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+      .site { color: #66707f; font-size: 12px; margin-bottom: 8px; word-break: break-all; }
+      label { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+      textarea { width: 100%; min-height: 90px; border: 1px solid #c9d0d8; border-radius: 8px; padding: 8px; font: inherit; resize: vertical; }
+      .row { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+      .btn { border: 1px solid #c9d0d8; background: #fff; border-radius: 7px; padding: 5px 10px; cursor: pointer; font: inherit; }
+      .btn.accent { background: #15c39a; border-color: #15c39a; color: #062b22; font-weight: 600; }
+      .status { color: #66707f; font-size: 12px; min-height: 16px; }
+      hr { border: 0; border-top: 1px solid #e3e7ec; margin: 12px 0; }
+      a { color: #0d7d63; }
+    </style>
+  </head>
+  <body>
+    <h1><img src="icons/icon-32.png" width="20" height="20" alt="" /> WriteWise</h1>
+    <div class="site" id="site">Current site</div>
+    <label><input type="checkbox" id="enabled" /> Check text boxes on this site</label>
+    <label><input type="checkbox" id="autofix" /> Auto-fix as I type on this site</label>
+    <label><input type="checkbox" id="autofix-all" /> Auto-fix everywhere</label>
+    <hr />
+    <textarea id="text" placeholder="Paste text here to fix it or turn it into an AI prompt…"></textarea>
+    <div class="row">
+      <button class="btn accent" id="fix">Fix</button>
+      <button class="btn" id="prompt">Make it a prompt</button>
+      <button class="btn" id="copy" hidden>Copy result</button>
+    </div>
+    <div class="status" id="status"></div>
+    <script type="module" src="./src/popup.ts"></script>
+  </body>
+</html>

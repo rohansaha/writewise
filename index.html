@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#15c39a" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <title>WriteWise</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <img src="./icon.svg" alt="" width="26" height="26" />
+          <span>WriteWise</span>
+        </div>
+        <input id="doc-title" class="doc-title" type="text" value="Untitled document" aria-label="Document title" spellcheck="false" />
+        <div class="topbar-actions">
+          <button id="btn-new" class="btn ghost" title="New document (⌘/Ctrl+N)">New</button>
+          <button id="btn-open" class="btn ghost" title="Open a .txt or .md file (⌘/Ctrl+O)">Open</button>
+          <button id="btn-save" class="btn ghost" title="Save as .txt (⌘/Ctrl+S)">Save</button>
+          <span class="divider"></span>
+          <div class="mode-switch" role="tablist" aria-label="Mode">
+            <button class="mode-btn active" data-mode="writing" role="tab" title="Check grammar, clarity and tone">Writing</button>
+            <button class="mode-btn" data-mode="prompt" role="tab" title="Score and improve text you will give to an AI">AI prompt</button>
+          </div>
+          <label class="toggle" title="Also check with the LanguageTool.org cloud service for stronger grammar detection (sends your text over the internet)">
+            <input id="toggle-cloud" type="checkbox" />
+            <span>Cloud boost</span>
+          </label>
+          <button id="btn-ai" class="btn accent" title="Rewrite with AI (needs an Anthropic API key in Settings)">✨ Rewrite</button>
+          <button id="btn-settings" class="btn icon" title="Settings" aria-label="Settings">⚙</button>
+          <button id="btn-panel" class="btn icon only-mobile" title="Toggle suggestions" aria-label="Toggle suggestions">☰</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="editor-wrap">
+          <div id="editor" class="editor"></div>
+          <footer class="statusbar">
+            <span id="status-engine">Loading dictionary…</span>
+            <span id="status-words">0 words</span>
+          </footer>
+        </section>
+
+        <aside id="panel" class="assistant" aria-label="Writing suggestions">
+          <div class="score-row">
+            <div class="score-ring" id="score-ring" style="--pct: 100">
+              <span id="score-value">—</span>
+            </div>
+            <div class="score-meta">
+              <div class="score-label">Overall score</div>
+              <div id="score-hint" class="score-hint">Start typing to get suggestions.</div>
+              <div id="tone" class="tone"></div>
+            </div>
+          </div>
+
+          <ul id="prompt-checks" class="prompt-checks" hidden></ul>
+
+          <nav class="cats" id="cats" aria-label="Suggestion categories">
+            <button class="cat active" data-cat="all">All <b id="cnt-all">0</b></button>
+            <button class="cat c-correctness" data-cat="correctness">Correctness <b id="cnt-correctness">0</b></button>
+            <button class="cat c-clarity" data-cat="clarity">Clarity <b id="cnt-clarity">0</b></button>
+            <button class="cat c-engagement" data-cat="engagement">Engagement <b id="cnt-engagement">0</b></button>
+            <button class="cat c-delivery" data-cat="delivery">Delivery <b id="cnt-delivery">0</b></button>
+            <button class="cat c-prompt" data-cat="prompt" hidden>Prompt <b id="cnt-prompt">0</b></button>
+          </nav>
+
+          <div class="cards-toolbar">
+            <button id="btn-accept-all" class="btn small ghost" title="Apply every suggestion that has a single replacement">Accept all safe fixes</button>
+          </div>
+          <div id="cards" class="cards" role="list"></div>
+
+          <details class="stats" open>
+            <summary>Document statistics</summary>
+            <dl id="stats" class="stats-grid"></dl>
+          </details>
+        </aside>
+      </main>
+
+      <dialog id="dlg-settings" class="dialog">
+        <form method="dialog" class="dialog-body">
+          <h2>Settings</h2>
+
+          <h3>Checks</h3>
+          <label class="row"><input type="checkbox" id="set-passive" /> Flag passive voice (Clarity)</label>
+          <label class="row"><input type="checkbox" id="set-readability" /> Flag hard-to-read sentences (Clarity)</label>
+          <label class="row"><input type="checkbox" id="set-wordiness" /> Flag wordy phrases and weak words (Clarity / Engagement)</label>
+          <label class="row"><input type="checkbox" id="set-equality" /> Flag insensitive or outdated language (Delivery)</label>
+          <label class="row"><input type="checkbox" id="set-profanity" /> Flag profanity (Delivery)</label>
+
+          <h3>Cloud boost</h3>
+          <p class="muted">When enabled, your text is sent to the free LanguageTool.org API for additional grammar checks. Rate limited to about 20 requests per minute and 20,000 characters per request. Nothing is sent unless this is on.</p>
+          <label class="row"><input type="checkbox" id="set-cloud" /> Enable cloud boost</label>
+          <label class="row">Language
+            <select id="set-lang">
+              <option value="en-US">English (US)</option>
+              <option value="en-GB">English (UK)</option>
+              <option value="en-AU">English (Australia)</option>
+              <option value="en-CA">English (Canada)</option>
+            </select>
+          </label>
+
+          <h3>AI rewrite (optional)</h3>
+          <p class="muted">Uses your own Anthropic API key, stored only on this device. Text you choose to rewrite is sent to the Claude API.</p>
+          <label class="row col">Anthropic API key
+            <input type="password" id="set-aikey" placeholder="sk-ant-…" autocomplete="off" />
+          </label>
+          <label class="row">Model
+            <select id="set-aimodel">
+              <option value="claude-opus-5-5">Claude Opus 5.5 (best quality)</option>
+              <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (fast)</option>
+              <option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest)</option>
+            </select>
+          </label>
+
+          <h3>Personal dictionary</h3>
+          <textarea id="set-personal" rows="3" placeholder="One word per line. These words are never flagged as misspelled."></textarea>
+
+          <div class="dialog-actions">
+            <button value="cancel" class="btn ghost" type="button" id="set-cancel">Cancel</button>
+            <button value="save" class="btn accent" id="set-save">Save</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="dlg-ai" class="dialog">
+        <div class="dialog-body">
+          <h2>✨ Rewrite with AI</h2>
+          <p class="muted" id="ai-scope">Rewrites the selected text, or the whole document if nothing is selected.</p>
+          <div class="ai-actions" id="ai-prompt-actions" hidden>
+            <button class="btn accent" data-mode="prompt">Turn into a detailed Claude prompt</button>
+            <button class="btn ghost" data-mode="prompt-expand">Add more detail</button>
+            <button class="btn ghost" data-mode="prompt-tighten">Remove ambiguity</button>
+            <button class="btn ghost" data-mode="template" title="No API key needed">Add structure offline</button>
+          </div>
+          <div class="ai-actions" id="ai-writing-actions">
+            <button class="btn ghost" data-mode="improve">Improve it</button>
+            <button class="btn ghost" data-mode="fix">Fix grammar only</button>
+            <button class="btn ghost" data-mode="shorten">Shorten</button>
+            <button class="btn ghost" data-mode="formal">Make it formal</button>
+            <button class="btn ghost" data-mode="casual">Make it casual</button>
+            <button class="btn ghost" data-mode="confident">Sound confident</button>
+            <button class="btn ghost" data-mode="simplify">Simplify</button>
+          </div>
+          <label class="row col">Or describe the change you want
+            <div class="ai-custom">
+              <input type="text" id="ai-custom" placeholder="e.g. Turn this into three bullet points" />
+              <button class="btn accent" data-mode="custom">Go</button>
+            </div>
+          </label>
+          <div id="ai-status" class="muted"></div>
+          <pre id="ai-output" class="ai-output" hidden></pre>
+          <div class="dialog-actions">
+            <button class="btn ghost" id="ai-close" type="button">Close</button>
+            <button class="btn ghost" id="ai-copy" type="button" hidden>Copy</button>
+            <button class="btn accent" id="ai-apply" type="button" hidden>Replace text</button>
+          </div>
+        </div>
+      </dialog>
+
+      <input id="file-input" type="file" accept=".txt,.md,.markdown,text/plain" hidden />
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
