@@ -1,0 +1,12 @@
+node_modules
+release
+dist
+bin
+extension-dist
+dev-dist
+.git
+.vercel
+.env.local
+*.dmg
+*.zip
+*.blockmap

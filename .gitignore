@@ -6,3 +6,7 @@ release
 *.log
 bin
 extension-dist
+docs-addon/build
+docs-addon/.clasp.json
+.vercel
+.env*
