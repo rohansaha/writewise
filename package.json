@@ -22,7 +22,8 @@
     "install:claude-code": "npm run build:cli && node bin/writewise.mjs install-claude-code",
     "uninstall:claude-code": "node bin/writewise.mjs uninstall-claude-code",
     "build:ext": "vite build --config vite.ext.config.ts && vite build --config vite.ext-content.config.ts && node -e \"require('fs').cpSync('public/dict','extension-dist/dict',{recursive:true})\"",
-    "pack:ext": "npm run build:ext && node scripts/zip-extension.mjs"
+    "pack:ext": "npm run build:ext && node scripts/zip-extension.mjs",
+    "build:docs-addon": "vite build --config vite.docs-addon.config.ts && node scripts/build-docs-addon.mjs"
   },
   "build": {
     "appId": "app.writewise.desktop",

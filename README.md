@@ -114,7 +114,18 @@ npm run pack:ext      # zips it into release/ for the Chrome Web Store
 
 Try it now: `chrome://extensions` → Developer mode → Load unpacked → choose `extension-dist`. Details in [extension/README.md](extension/README.md); the store listing text is in [extension/STORE_LISTING.md](extension/STORE_LISTING.md).
 
-Google Docs draws its editor on a canvas, so the badge cannot read the document body there (it works in Docs comments, Gmail, Forms and ordinary fields). A Docs sidebar add-on would need a separate Apps Script project and Workspace Marketplace review.
+Google Docs draws its editor on a canvas, so the badge cannot read the document body there (it works in Docs comments, Gmail, Forms and ordinary fields). For the document body itself, use the Google Docs add-on below.
+
+## Google Docs add-on
+
+The same engine also runs as a Google Docs sidebar add-on (Apps Script). The sidebar lists suggestions for every paragraph, applies one-click fixes in place, has "Fix all safe", and "Make it a prompt" inserts a structured AI prompt below the selection. The engine and dictionary are inlined into the sidebar HTML, so it makes no network requests and only asks for the `documents.currentonly` and `script.container.ui` scopes.
+
+```bash
+npm run build:docs-addon   # builds docs-addon/dist/ (Sidebar.html, Code.js, appsscript.json)
+cd docs-addon && npx clasp login && npx clasp create-script --type docs --title WriteWise --rootDir dist && npx clasp push -f
+```
+
+Build, clasp, how to test it as an unpublished add-on, a manual test plan and the Workspace Marketplace listing steps are in [docs-addon/README.md](docs-addon/README.md).
 
 ## Publishing it for free
 
@@ -127,6 +138,7 @@ Everything is MIT-licensed (see [LICENSE](LICENSE)), so you can give it away. Ea
 | Chrome Web Store | `npm run pack:ext`, upload the zip at https://chrome.google.com/webstore/devconsole, paste the listing text, submit for review (usually 1–3 days) | one-time US$5 developer registration |
 | Edge Add-ons | same zip at https://partner.microsoft.com/dashboard/microsoftedge | free |
 | Claude Code / Claude Desktop | users run `npm run install:claude-code` from a clone | free |
+| Google Docs add-on | `npm run build:docs-addon`, `clasp push`, then a Google Workspace Marketplace listing (steps in [docs-addon/README.md](docs-addon/README.md)) | free; Google reviews public listings |
 
 ### Automatic deploys on push
 
@@ -164,6 +176,7 @@ cli/mcp.ts            MCP server (proofread_text, analyze_prompt, check_text)
 src/cloud.ts          LanguageTool client
 src/ai.ts             Claude rewrite (Anthropic SDK)
 electron/main.cjs     desktop wrapper
+docs-addon/           Google Docs sidebar add-on (Apps Script; the engine and dictionary are inlined into Sidebar.html)
 public/dict/          Hunspell en-US dictionary (SCOWL license in LICENSE-dictionary-en.txt)
 ```
 

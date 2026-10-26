@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WriteWise Docs add-on harness</title>
+  <style>
+    body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: grid; grid-template-columns: 1fr 300px; height: 100vh; }
+    .doc { padding: 28px 40px; overflow: auto; background: #f1f3f4; }
+    .page { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.2); padding: 48px 60px; min-height: 600px; max-width: 680px; font-family: Georgia, serif; font-size: 15px; }
+    .page p { margin: 0 0 1em; white-space: pre-wrap; min-height: 1em; }
+    .page p.sel { outline: 2px solid #1a73e8; }
+    .page mark { background: #c2dbff; }
+    .page p.bold { font-weight: 700; }
+    .tools { font-size: 12px; color: #555; margin-bottom: 10px; }
+    iframe { border: 0; border-left: 1px solid #ddd; width: 300px; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="tools">Fake Google Doc. The sidebar on the right is <code>docs-addon/dist/Sidebar.html</code> talking to an in-page mock of Code.js. Click a paragraph to “select” it. <button id="reset">Reset text</button></div>
+    <div class="page" id="page"></div>
+  </div>
+  <iframe id="sidebar" src="../dist/Sidebar.html"></iframe>
+  <script>
+    var SAMPLE = [
+      'Teh quick brown fox jumps over the lazy dog. I could of done this better, but it is what it is.',
+      '',
+      'This report was written by the team and it was reviewed by management before it was sent to the the client.',
+      'please write something good about our product and make it better.',
+      'We should hone in on the end result and avoid very unique ideas, irregardless of the cost.',
+    ];
+    var mock = window.__writewiseDocsMock = {
+      paragraphs: SAMPLE.slice(),
+      bold: {},
+      selected: null,
+      range: null,
+      getDocumentText: function () {
+        return { paragraphs: this.paragraphs.map(function (t, i) { return { index: i, text: t }; }).filter(function (p) { return p.text.length; }), count: this.paragraphs.length };
+      },
+      applyFix: function (p, s, e, rep, expected) { return this.applyFixes([{ paragraphIndex: p, start: s, end: e, replacement: rep, expected: expected }]); },
+      applyFixes: function (fixes) {
+        var self = this, byP = {}, applied = 0, skipped = 0, updated = {};
+        fixes.forEach(function (f) { (byP[f.paragraphIndex] = byP[f.paragraphIndex] || []).push(f); });
+        Object.keys(byP).forEach(function (k) {
+          var cur = self.paragraphs[Number(k)];
+          if (cur === undefined) { skipped += byP[k].length; return; }
+          var list = byP[k].sort(function (a, b) { return b.start - a.start; }), lastStart = Infinity;
+          list.forEach(function (f) {
+            var ok = f.start >= 0 && f.end >= f.start && f.end <= cur.length && f.end <= lastStart && (typeof f.expected !== 'string' || cur.substring(f.start, f.end) === f.expected);
+            if (!ok) { skipped++; return; }
+            cur = cur.substring(0, f.start) + f.replacement + cur.substring(f.end);
+            lastStart = f.start; applied++;
+          });
+          self.paragraphs[Number(k)] = cur; updated[k] = cur;
+        });
+        this.range = null; render();
+        return { applied: applied, skipped: skipped, paragraphs: updated };
+      },
+      selectRange: function (p, s, e, expected) {
+        if (this.paragraphs[p] === undefined) return { ok: false };
+        if (typeof expected === 'string' && this.paragraphs[p].substring(s, e) !== expected) return { ok: false };
+        this.selected = p; this.range = { p: p, s: s, e: e }; render();
+        return { ok: true };
+      },
+      getPromptSource: function () {
+        if (this.range) return { text: this.paragraphs[this.range.p].substring(this.range.s, this.range.e), scope: 'selection' };
+        if (this.selected !== null) return { text: this.paragraphs[this.selected], scope: 'cursor' };
+        return { text: this.paragraphs.join('\n'), scope: 'document' };
+      },
+      insertPrompt: function (lines) {
+        var at = this.selected === null ? this.paragraphs.length : this.selected + 1;
+        var ins = [''].concat(lines);
+        var self = this;
+        var newBold = {};
+        Object.keys(this.bold).forEach(function (k) { var i = Number(k); newBold[i >= at ? i + ins.length : i] = true; });
+        ins.forEach(function (l, i) { if (l.indexOf('# ') === 0) newBold[at + i] = true; });
+        this.bold = newBold;
+        this.paragraphs.splice.apply(this.paragraphs, [at, 0].concat(ins));
+        render();
+        return { inserted: lines.length, scope: this.selected === null ? 'end' : 'selection' };
+      },
+      getSettings: function () { try { return JSON.parse(localStorage.getItem('ww-docs-mock-settings') || 'null'); } catch (e) { return null; } },
+      saveSettings: function (json) { localStorage.setItem('ww-docs-mock-settings', json); return true; },
+    };
+    function render() {
+      var page = document.getElementById('page');
+      page.textContent = '';
+      mock.paragraphs.forEach(function (t, i) {
+        var p = document.createElement('p');
+        if (mock.selected === i) p.className = 'sel';
+        if (mock.bold[i]) p.classList.add('bold');
+        if (mock.range && mock.range.p === i) {
+          p.appendChild(document.createTextNode(t.slice(0, mock.range.s)));
+          var m = document.createElement('mark'); m.textContent = t.slice(mock.range.s, mock.range.e); p.appendChild(m);
+          p.appendChild(document.createTextNode(t.slice(mock.range.e)));
+        } else p.textContent = t;
+        p.addEventListener('click', function () { mock.selected = i; mock.range = null; render(); });
+        page.appendChild(p);
+      });
+    }
+    document.getElementById('reset').addEventListener('click', function () { mock.paragraphs = SAMPLE.slice(); mock.bold = {}; mock.selected = null; mock.range = null; render(); });
+    render();
+  </script>
+</body>
+</html>

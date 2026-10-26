@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "types": ["vite/client", "vite-plugin-pwa/client", "chrome"]
   },
-  "include": ["src", "cli", "extension/src", "extension/test", "vite.config.ts", "vite.cli.config.ts", "vite.ext.config.ts", "vite.ext-content.config.ts"]
+  "include": ["src", "cli", "extension/src", "extension/test", "vite.config.ts", "vite.cli.config.ts", "vite.ext.config.ts", "vite.ext-content.config.ts", "vite.docs-addon.config.ts", "docs-addon/src"]
 }
