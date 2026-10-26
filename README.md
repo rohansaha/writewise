@@ -123,10 +123,17 @@ Everything is MIT-licensed (see [LICENSE](LICENSE)), so you can give it away. Ea
 | Channel | How | Cost |
 |---|---|---|
 | Desktop installers | push a tag `v0.1.0` to a GitHub repo; the workflow builds macOS/Windows/Linux and attaches them to a Release | free |
-| Web app (PWA) | import the GitHub repo at https://vercel.com/new (the included `vercel.json` sets everything); every push to `main` redeploys. Or `npm run build` and host `dist/` on Netlify, Cloudflare Pages or GitHub Pages | free tiers |
+| Web app (PWA) | live at https://writewise-beta.vercel.app. Redeploy with `npx vercel deploy --prod`, or connect the repo so pushes to `main` deploy automatically (see below). `dist/` also hosts on Netlify, Cloudflare Pages or GitHub Pages | free tiers |
 | Chrome Web Store | `npm run pack:ext`, upload the zip at https://chrome.google.com/webstore/devconsole, paste the listing text, submit for review (usually 1–3 days) | one-time US$5 developer registration |
 | Edge Add-ons | same zip at https://partner.microsoft.com/dashboard/microsoftedge | free |
 | Claude Code / Claude Desktop | users run `npm run install:claude-code` from a clone | free |
+
+### Automatic deploys on push
+
+Two ways, pick one:
+
+1. **Vercel GitHub app (recommended)**: install it for the repository at https://github.com/apps/vercel/installations/new, then run `npx vercel git connect` in the project folder (or Vercel dashboard → project → Settings → Git → Connect). Every push to `main` becomes a production deploy; pull requests get preview URLs.
+2. **GitHub Actions** (`.github/workflows/deploy-web.yml`): add the repository secrets `VERCEL_TOKEN` (create one at https://vercel.com/account/tokens), `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` (both printed by `cat .vercel/project.json`). The workflow stays idle until the token secret exists.
 
 ## How the checking works
 

@@ -1,0 +1,31 @@
+name: Deploy web app to Vercel
+
+# Fallback for repositories where the Vercel GitHub app is not installed.
+# Needs three repository secrets: VERCEL_TOKEN (vercel.com/account/tokens),
+# VERCEL_ORG_ID and VERCEL_PROJECT_ID (both are in .vercel/project.json after `vercel link`).
+# Once the Vercel GitHub app is connected to the repo, Vercel deploys on push by itself and this workflow is redundant.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ secrets.VERCEL_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --global vercel@latest
+      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
