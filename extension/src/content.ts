@@ -15,16 +15,23 @@ const MAX_CHARS = 20000
 
 const hasChrome = typeof chrome !== 'undefined' && !!chrome.runtime?.id
 let settings: Settings = { ...DEFAULT_SETTINGS }
+// Opt-in "Fix with Claude" (popup > Claude). Only the flag is read here; the key stays in the background worker.
+let claudeEnabled = false
 
 // ---------- settings ----------
 async function loadSettings(): Promise<void> {
   if (hasChrome && chrome.storage?.sync) {
     settings = { ...DEFAULT_SETTINGS, ...(await chrome.storage.sync.get(DEFAULT_SETTINGS)) } as Settings
     chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local') {
+        if (changes.claudeEnabled) { claudeEnabled = !!changes.claudeEnabled.newValue; if (panelOpen) renderPanel() }
+        return
+      }
       if (area !== 'sync') return
       for (const [k, v] of Object.entries(changes)) (settings as any)[k] = v.newValue ?? (DEFAULT_SETTINGS as any)[k]
       if (active) scheduleCheck(active, 0)
     })
+    try { claudeEnabled = !!(await chrome.storage.local.get({ claudeEnabled: false })).claudeEnabled } catch { claudeEnabled = false }
   } else {
     try { settings = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('writewise:ext') || '{}') } } catch { /* ignore */ }
   }
@@ -50,6 +57,19 @@ function sendCheck(text: string, mode: Mode): Promise<CheckResponse> {
       if (!res) return reject(new Error('no response'))
       if (res.error) return reject(new Error(res.error))
       resolve(res)
+    })
+  })
+}
+
+/** Asks the background worker to correct the text with Claude (the user's own key, opt-in). */
+function sendClaudeFix(text: string): Promise<string> {
+  if (!hasChrome) return Promise.reject(new Error('no engine'))
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: 'claude-fix', text }, (res: { fixed?: string; error?: string }) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message))
+      if (!res) return reject(new Error('no response'))
+      if (res.error) return reject(new Error(res.error))
+      resolve(res.fixed ?? '')
     })
   })
 }
@@ -298,6 +318,14 @@ function renderPanel() {
     fixAll.addEventListener('click', () => { if (!lastResult) return; setText(el, applyEdits(getText(el), lastResult.edits)); lastText = ''; scheduleCheck(el, 150); flash('Fixed') })
     header.appendChild(fixAll)
   }
+  if (claudeEnabled && lastResult && hasChrome) {
+    const cl = document.createElement('button')
+    cl.className = 'btn'
+    cl.textContent = 'Fix with Claude'
+    cl.title = 'Correct grammar, spelling and punctuation with Claude using your own API key (sends this text to Anthropic)'
+    cl.addEventListener('click', () => claudeFixBox(el, cl))
+    header.appendChild(cl)
+  }
   if (lastResult?.template) {
     const mk = document.createElement('button')
     mk.className = 'btn'
@@ -360,16 +388,38 @@ function renderPanel() {
   panel.style.display = 'block'
 }
 
+/** Replaces the box's text with Claude's correction, unless the text changed while Claude was thinking. */
+async function claudeFixBox(el: HTMLElement, btn: HTMLButtonElement) {
+  const text = getText(el)
+  if (!text.trim()) return
+  btn.disabled = true
+  btn.textContent = 'Asking Claude…'
+  try {
+    const fixed = await sendClaudeFix(text)
+    if (el !== active || getText(el) !== text) { flash('The text changed meanwhile; nothing replaced', 3000); return }
+    if (!fixed || fixed === text) { flash('Claude found nothing to fix'); return }
+    setText(el, fixed)
+    lastText = ''
+    scheduleCheck(el, 150)
+    flash('Fixed with Claude')
+  } catch (err) {
+    flash((err as Error).message || 'Claude request failed', 4500)
+  } finally {
+    btn.disabled = false
+    btn.textContent = 'Fix with Claude'
+  }
+}
+
 function hidePanel() { panelOpen = false; if (panel) panel.style.display = 'none' }
 
 let toastTimer: number | undefined
-function flash(msg: string) {
+function flash(msg: string, ms = 1800) {
   ensureUi()
   if (!toast) return
   toast.textContent = `WriteWise: ${msg}`
   toast.style.display = 'block'
   clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { if (toast) toast.style.display = 'none' }, 1800)
+  toastTimer = window.setTimeout(() => { if (toast) toast.style.display = 'none' }, ms)
 }
 
 // ---------- wiring ----------

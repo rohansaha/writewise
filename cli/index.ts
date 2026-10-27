@@ -11,8 +11,14 @@ import { createChecker, DEFAULT_CHECK_OPTIONS, type Checker } from '../src/engin
 import { autoFix } from '../src/engine/autofix'
 import { analyzePrompt, buildPromptTemplate } from '../src/engine/prompt'
 import type { CheckOptions, Issue, PromptReport } from '../src/types'
+import { configFile, describeSource, desktopSocketPath, fetchAiSettingsFromDesktop, maskKey, readConfig, resolveAiSettings, writeConfig, DEFAULT_AI_MODEL, type AiKeySource, type AiSettings, type WriteWiseConfig } from './config'
+import { createNativeMessageDecoder, encodeNativeMessage, handleNativeMessage, lookupAiSettings, serveNativeHost, NATIVE_HOST_NAME } from './native-host'
 
 export { createChecker, autoFix, analyzePrompt, buildPromptTemplate, DEFAULT_CHECK_OPTIONS }
+// Shared API-key handling (also used by the Electron main process through this bundle).
+export { configFile, describeSource, desktopSocketPath, fetchAiSettingsFromDesktop, maskKey, readConfig, resolveAiSettings, writeConfig, DEFAULT_AI_MODEL }
+export { createNativeMessageDecoder, encodeNativeMessage, handleNativeMessage, lookupAiSettings, serveNativeHost, NATIVE_HOST_NAME }
+export type { AiKeySource, AiSettings, WriteWiseConfig }
 
 // ---------- dictionary ----------
 async function exists(p: string) { try { await access(p); return true } catch { return false } }
@@ -102,7 +108,12 @@ function usage() {
   console.log(`WriteWise CLI
 
   writewise fix [file] [--prompt] [--json]   Fix spelling/grammar (stdin or file). --prompt wraps it as a structured AI prompt.
+  writewise fix [file] --claude [--prompt]   The same, then Claude corrects the result with your key (sends the text to Anthropic).
   writewise check [file]                      List every suggestion with line:column.
+  writewise key set [key] [--model=<id>]      Save your Anthropic API key for every WriteWise surface (~/.config/writewise/config.json, owner-only;
+                                              reads stdin when no key is given). ANTHROPIC_API_KEY in the environment takes precedence.
+  writewise key show | clear                  Show which key is in use and where it comes from, or remove the saved one.
+  writewise native-host                       Native-messaging host for the browser extension (registered by the desktop app; not for manual use).
   writewise hook                              Claude Code UserPromptSubmit hook (reads the hook JSON on stdin).
   writewise mcp                               Run as an MCP server over stdio (tools: proofread_text, analyze_prompt, check_text).
   writewise install-claude-code               Register the hook in ~/.claude/settings.json and the MCP server with the claude CLI.
@@ -183,6 +194,16 @@ export async function main(argv: string[]) {
       const checker = await createNodeChecker()
       const text = await readInput(file)
       const result = await fixText(checker, text)
+      if (flags.has('--claude')) {
+        // Offline fixes first, then Claude with the user's own key (ANTHROPIC_API_KEY, the running desktop app, or config.json); nothing is sent otherwise.
+        const ai = await lookupAiSettings()
+        if (!ai.apiKey) throw new Error(`No Anthropic API key found: set ANTHROPIC_API_KEY, enter one under Settings in the WriteWise desktop app, or run "writewise key set" (writes ${configFile()}).`)
+        process.stderr.write(`Asking ${ai.model} (key from ${describeSource(ai.source)})…\n`)
+        const out = await rewrite({ apiKey: ai.apiKey, model: ai.model, mode: flags.has('--prompt') ? 'prompt' : 'fix', text: result.fixed })
+        if (flags.has('--json')) { console.log(JSON.stringify({ ...result, claude: out, model: ai.model }, null, 2)); return }
+        process.stdout.write(out.endsWith('\n') ? out : out + '\n')
+        return
+      }
       if (flags.has('--json')) { console.log(JSON.stringify(result, null, 2)); return }
       process.stdout.write(flags.has('--prompt') ? buildPromptTemplate(result.fixed, result.prompt) : result.fixed)
       if (!result.fixed.endsWith('\n')) process.stdout.write('\n')
@@ -199,6 +220,30 @@ export async function main(argv: string[]) {
     }
     case 'hook': return runHook()
     case 'mcp': { const { serve } = await import('./mcp'); return serve() }
+    case 'native-host': return serveNativeHost()
+    case 'key': {
+      const sub = rest[0]
+      const modelFlag = rest.find((a) => a.startsWith('--model='))?.slice('--model='.length)
+      if (sub === 'set') {
+        let key = rest.slice(1).find((a) => !a.startsWith('--')) || ''
+        if (!key || key === '-') key = (await readInput()).trim()
+        if (!key) throw new Error('Pass the key as an argument or on stdin, e.g.  echo sk-ant-… | writewise key set')
+        await writeConfig({ anthropicApiKey: key, ...(modelFlag ? { model: modelFlag } : {}) })
+        console.log(`✓ Key saved to ${configFile()} (readable only by you).\n  Used by the CLI, the Claude Code hook, the MCP server and the browser-extension bridge; the desktop app uses it too until you enter a key under its Settings.`)
+        return
+      }
+      if (sub === 'clear') {
+        await writeConfig({ anthropicApiKey: '' })
+        console.log(`✓ Key removed from ${configFile()}`)
+        return
+      }
+      if (!sub || sub === 'show') {
+        const s = await lookupAiSettings()
+        console.log(s.apiKey ? `Key ${maskKey(s.apiKey)} from ${describeSource(s.source)}; model ${s.model}` : `No API key found. Looked at: the running desktop app, ANTHROPIC_API_KEY, ${configFile()}.`)
+        return
+      }
+      throw new Error(`Unknown key command "${sub}" (set | show | clear)`)
+    }
     case 'install-claude-code': return installClaudeCode()
     case 'uninstall-claude-code': return uninstallClaudeCode()
     default: usage()

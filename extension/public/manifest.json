@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Free, private spelling and grammar fixes in any text box, auto-fix as you type on AI chat sites, and one-click structured prompts.",
   "permissions": ["storage", "activeTab"],
+  "optional_permissions": ["nativeMessaging"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle", "all_frames": true }

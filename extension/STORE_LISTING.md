@@ -14,17 +14,19 @@ WriteWise checks whatever you type, wherever you type it: email, forms, social p
 • On AI chat sites, safe fixes (typos, missing apostrophes, doubled words, their/there mix-ups) are applied automatically as you type, so the assistant always gets clean text. Turn this on for any site in the popup.
 • "Make it a prompt" turns rough notes into a structured prompt with Role, Task, Context, Requirements, Output format and Success criteria sections, with [brackets] for anything you still need to decide.
 • The popup lets you paste any text, fix it, and copy the result.
+• Optional: turn on Claude in the popup and a "Fix with Claude" button corrects the whole text box in context, using your own Anthropic API key. Paste the key, or fetch it with one click from the WriteWise desktop app if you use that too.
 
-Privacy: everything runs inside your browser. The extension makes no network requests, collects no data, and has no account. It is free and open source (MIT).
+Privacy: everything runs inside your browser. The extension makes no network requests, collects no data, and has no account. The only exception is the optional Claude feature, off by default: when you turn it on and click "Fix with Claude", the text in that box is sent to Anthropic's API (api.anthropic.com) with your own key, and nowhere else. It is free and open source (MIT).
 
 **Permission justifications (for the review form):**
-- `storage`: saves your per-site preferences (enabled sites, auto-fix sites).
+- `storage`: saves your per-site preferences (enabled sites, auto-fix sites) and, if you opt in, your own Anthropic API key in local (unsynced) storage.
 - `activeTab`: lets the popup show and change settings for the site you are on.
+- `nativeMessaging` (optional, requested only when you click "Use the desktop app's key"): asks the WriteWise desktop app, if installed and running on the same computer, for the API key you already entered there, so you do not have to paste it twice. It exchanges nothing else.
 - Content script on `<all_urls>`: needed to show the badge on text boxes on any website. No page data leaves the browser.
 
 **Single purpose:** proofreading and improving text the user types.
 
-**Data usage disclosure:** does not collect or transmit user data.
+**Data usage disclosure:** the developer collects no data. With the optional Claude feature switched on by the user, the text of the box the user asks to fix is sent to Anthropic's API using the user's own API key ("Website content" and "User activity: text the user chooses to submit", transmitted to a third party at the user's request, not to the developer). Nothing is sent while the feature is off, which is the default. Remote code: none (the Anthropic SDK is bundled).
 
 **Privacy policy URL:** https://writewise-beta.vercel.app/privacy.html
 
@@ -50,6 +52,8 @@ justifications, "no remote code", no data collected + the three certifications, 
 regions. Settings: contact email verified, EEA trader declaration = non-trader. Submitted for review on 2026-10-27 with "publish automatically after review" ticked; status is now **Pending review**.
 Google warned that the `<all_urls>` host permission may trigger an in-depth review, so expect days rather than hours.
 The store listing will appear at https://chromewebstore.google.com/detail/hmdpffagdonhmmgdcohmbkjcijiieicn once approved.
+
+**Next upload (after the 0.1.0 review):** the source now has the optional Claude feature and `optional_permissions: ["nativeMessaging"]`. The manifest version is still 0.1.0 on purpose while that review is pending; bump it to 0.1.1 (package.json + manifest) before `npm run pack:ext`, paste the updated Description, the `nativeMessaging` justification and the Data usage text above, untick "does not collect or transmit user data" in favour of the disclosure above, and keep the same privacy policy URL (its text was updated for the opt-in network use).
 
 ## Submitting (about 10 minutes in the dashboard)
 
