@@ -28,7 +28,8 @@ async function decryptKey(buf) {
       await new Promise((r) => setTimeout(r, 300 * (attempt + 1)))
     }
   }
-  try { if (safeStorage.isEncryptionAvailable()) return { result: safeStorage.decryptString(buf), shouldReEncrypt: false } } catch (err) { lastErr = err }
+  // The synchronous API reads the keychain item directly (and lets macOS ask for access when it must).
+  try { return { result: safeStorage.decryptString(buf), shouldReEncrypt: false } } catch (err) { console.warn('safeStorage sync decrypt failed:', err.message); lastErr = err }
   throw lastErr || new Error('could not decrypt')
 }
 
