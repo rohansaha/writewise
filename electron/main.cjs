@@ -220,6 +220,25 @@ async function promptifyInPlace() {
   }
 }
 
+let mainWin = null
+
+/**
+ * The AI settings the user entered in the editor (Settings > Anthropic API key / model). They live in the
+ * renderer's localStorage; the main process reads them through the editor window when it exists.
+ */
+async function getAiSettings() {
+  const win = mainWin && !mainWin.isDestroyed() ? mainWin : BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'WriteWise')
+  if (!win) return { apiKey: '', model: '' }
+  try {
+    const raw = await win.webContents.executeJavaScript("localStorage.getItem('writewise:settings')", true)
+    const s = raw ? JSON.parse(raw) : {}
+    return { apiKey: typeof s.aiKey === 'string' ? s.aiKey.trim() : '', model: typeof s.aiModel === 'string' && s.aiModel ? s.aiModel : 'claude-opus-5-5' }
+  } catch (err) {
+    console.warn('could not read AI settings:', err.message)
+    return { apiKey: '', model: '' }
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
@@ -230,6 +249,8 @@ function createWindow() {
     backgroundColor: '#f4f6f8',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
+  mainWin = win
+  win.on('closed', () => { if (mainWin === win) mainWin = null })
   win.loadURL('app://bundle/index.html')
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url)
@@ -281,7 +302,7 @@ app.whenReady().then(() => {
   if (!globalShortcut.register('CommandOrControl+Shift+P', promptifyInPlace)) console.warn('Could not register CommandOrControl+Shift+P')
   getEngine().catch((err) => console.warn('engine preload failed', err))
   if (process.platform === 'darwin' && ax.available()) {
-    overlay = createOverlay({ ax, getEngine, notify })
+    overlay = createOverlay({ ax, getEngine, notify, getAiSettings })
     if (shellSettings.overlay) overlay.start().catch((err) => console.warn('overlay start failed', err))
   }
   app.on('activate', () => { if (BrowserWindow.getAllWindows().filter((w) => w !== toastWin).length === 0) createWindow() })

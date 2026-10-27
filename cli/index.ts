@@ -207,3 +207,27 @@ export async function main(argv: string[]) {
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 if (invokedDirectly) main(process.argv.slice(2)).catch((err) => { console.error(err instanceof Error ? err.message : err); process.exit(1) })
+
+// ---------- context-aware sentence correction (Claude API, user's own key) ----------
+import { rewrite } from '../src/ai'
+
+export interface SentenceRewriteParams {
+  apiKey: string
+  model: string
+  /** The sentence to correct. */
+  sentence: string
+  /** The whole text it sits in, used only as context. */
+  context: string
+  signal?: AbortSignal
+}
+
+/**
+ * Corrects one sentence with the surrounding text as context (so "their"/"there", tense and
+ * agreement are judged in context), changing as little as possible. Used by the desktop overlay's
+ * "Rewrite with Claude" button. Returns only the corrected sentence.
+ */
+export async function rewriteSentence(p: SentenceRewriteParams): Promise<string> {
+  const instruction = `Below is a full message (CONTEXT) and one SENTENCE taken from it. Correct the SENTENCE: fix spelling, grammar, punctuation and clearly wrong word choices, judging them from the context. Keep its meaning, tone, wording and length as they are; change only what is needed. Output only the corrected sentence, with no quotes and no explanation.\n\nCONTEXT:\n"""\n${p.context}\n"""\n\nSENTENCE:`
+  const out = await rewrite({ apiKey: p.apiKey, model: p.model, mode: 'custom', instruction, text: p.sentence, signal: p.signal })
+  return out.replace(/^["'“”]+|["'“”]+$/g, '').trim()
+}

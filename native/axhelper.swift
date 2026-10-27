@@ -436,6 +436,37 @@ func findTextBox(matching match: String) -> AXUIElement? {
   return nil
 }
 
+/// Bounds of a range split per visual line: the words in the range are measured one by one and grouped by
+/// their vertical position, which works for every editor (unlike the line-based parameterized attributes).
+func lineRects(_ el: AXUIElement, fullText: NSString, segments: inout [Segment]?, start: Int, length: Int) -> [[Double]] {
+  guard start >= 0, length > 0, start + length <= fullText.length else { return [] }
+  let text = fullText.substring(with: NSRange(location: start, length: length)) as NSString
+  var words: [(Int, Int)] = []
+  var i = 0
+  while i < text.length {
+    while i < text.length, text.character(at: i) == 0x20 || text.character(at: i) == 0x0A || text.character(at: i) == 0x09 { i += 1 }
+    let ws = i
+    while i < text.length, !(text.character(at: i) == 0x20 || text.character(at: i) == 0x0A || text.character(at: i) == 0x09) { i += 1 }
+    if i > ws { words.append((start + ws, i - ws)) }
+  }
+  var lines: [CGRect] = []
+  for (ws, wl) in words {
+    var r = boundsForRange(el, ws, wl)
+    if r == nil {
+      if segments == nil { segments = textSegments(el, fullText: fullText as String) }
+      r = boundsViaSegments(segments!, start: ws, length: wl)
+    }
+    guard let b = r else { continue }
+    let rect = CGRect(x: b[0], y: b[1], width: b[2], height: b[3])
+    if let last = lines.last, abs(last.midY - rect.midY) < max(4, last.height * 0.5) {
+      lines[lines.count - 1] = last.union(rect)
+    } else {
+      lines.append(rect)
+    }
+  }
+  return lines.map { [$0.origin.x, $0.origin.y, $0.width, $0.height] }
+}
+
 // MARK: - commands
 
 func handleCommand(_ obj: [String: Any]) {
@@ -482,18 +513,24 @@ func handleCommand(_ obj: [String: Any]) {
     }
   case "bounds":
     var rects: [Any] = []
+    var lines: [Any] = []
+    let wantLines = obj["lines"] as? Bool ?? false
     if let el = target(), let ranges = obj["ranges"] as? [[Int]] {
       var segments: [Segment]? = nil
+      let full = (axAttr(el, kAXValueAttribute) as? String ?? "") as NSString
       for r in ranges where r.count == 2 {
         var rect = boundsForRange(el, r[0], r[1])
         if rect == nil {
-          if segments == nil { segments = textSegments(el, fullText: axAttr(el, kAXValueAttribute) as? String ?? "") }
+          if segments == nil { segments = textSegments(el, fullText: full as String) }
           rect = boundsViaSegments(segments!, start: r[0], length: r[1])
         }
         rects.append(rect ?? NSNull())
+        if wantLines { lines.append(lineRects(el, fullText: full, segments: &segments, start: r[0], length: r[1])) }
       }
     }
-    reply(["type": "bounds", "rects": rects])
+    var out: [String: Any] = ["type": "bounds", "rects": rects]
+    if wantLines { out["lines"] = lines }
+    reply(out)
   case "replace":
     guard let el = target(), let start = obj["start"] as? Int, let length = obj["length"] as? Int, let text = obj["text"] as? String else {
       reply(["type": "replace", "ok": false, "error": "no focused text box or bad arguments"]); return
