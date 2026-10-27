@@ -12,7 +12,7 @@ import { autoFix } from '../src/engine/autofix'
 import { analyzePrompt, buildPromptTemplate } from '../src/engine/prompt'
 import type { CheckOptions, Issue, PromptReport } from '../src/types'
 
-export { createChecker, autoFix, analyzePrompt, buildPromptTemplate }
+export { createChecker, autoFix, analyzePrompt, buildPromptTemplate, DEFAULT_CHECK_OPTIONS }
 
 // ---------- dictionary ----------
 async function exists(p: string) { try { await access(p); return true } catch { return false } }

@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/make-icons.mjs",
-    "build:electron": "cross-env ELECTRON=1 vite build && npm run build:cli",
+    "build:electron": "cross-env ELECTRON=1 vite build && npm run build:cli && npm run build:axhelper",
     "electron": "npm run build:electron && electron .",
     "dist": "npm run build:electron && electron-builder",
     "dist:mac": "npm run build:electron && electron-builder --mac",
@@ -24,7 +24,8 @@
     "build:ext": "vite build --config vite.ext.config.ts && vite build --config vite.ext-content.config.ts && node -e \"require('fs').cpSync('public/dict','extension-dist/dict',{recursive:true})\"",
     "pack:ext": "npm run build:ext && node scripts/zip-extension.mjs",
     "build:docs-addon": "vite build --config vite.docs-addon.config.ts && node scripts/build-docs-addon.mjs",
-    "test": "npm run build:cli && node --test test/"
+    "test": "npm run build:cli && node --test test/",
+    "build:axhelper": "node scripts/build-axhelper.mjs"
   },
   "build": {
     "appId": "app.writewise.desktop",
@@ -57,7 +58,13 @@
           ]
         }
       ],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "extraResources": [
+        {
+          "from": "native/build/axhelper",
+          "to": "axhelper"
+        }
+      ]
     },
     "win": {
       "target": [

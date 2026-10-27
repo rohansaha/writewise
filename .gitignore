@@ -10,3 +10,4 @@ docs-addon/build
 docs-addon/.clasp.json
 .vercel
 .env*
+native/build
