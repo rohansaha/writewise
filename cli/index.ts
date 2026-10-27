@@ -299,7 +299,14 @@ export async function buildPromptWithClaude(p: PromptBuildParams): Promise<strin
   const where = p.app ? `The prompt will be sent to an AI assistant from the app "${p.app}"${/claude/i.test(p.app) ? ' (Claude)' : ''}.` : 'The prompt will be sent to an AI assistant.'
   const around = p.surrounding && p.surrounding.trim() !== p.text.trim()
     ? `\n\nThe notes are part of a longer message; use it only as context (do not turn it into the prompt):\n"""\n${p.surrounding}\n"""` : ''
-  const instructionOverride = `Turn the user's notes into a complete prompt. ${where} First correct spelling, grammar and word choice in context (for example "shud" means "should", "their going" means "they're going"). Then fill every section from what the notes and the context actually say: who and what it is about, the audience, tone, length and constraints the user stated. Use [square brackets] only for details that are truly missing and would change the answer; never bracket something the user already said. Keep it as short as the request allows: a one-line request gets a compact prompt, not a long form.${around}`
+  // Match the prompt's size to the request: a quick one-liner gets a compact prompt, longer notes the full structure.
+  const words = p.text.trim().split(/\s+/).filter(Boolean).length
+  const sentences = p.text.split(/[.!?\n]+/).filter((x) => x.trim()).length
+  const short = words <= 30 && sentences <= 2
+  const shape = short
+    ? ' This is a short, one-line request, so keep the prompt compact: at most about 10 lines in total. Use only these parts: one line for the role, one or two lines of task (with any context the user gave), 3 to 5 bullet requirements that matter most, and one line for the output format. Skip the Context and Success criteria headings and the closing line about brackets; use at most two [brackets].'
+    : ' Keep each section tight: no filler, no restating the same point, and omit any section that adds nothing for this request.'
+  const instructionOverride = `Turn the user's notes into a complete prompt. ${where} First correct spelling, grammar and word choice in context (for example "shud" means "should", "their going" means "they're going"). Then fill every section from what the notes and the context actually say: who and what it is about, the audience, tone, length and constraints the user stated. Use [square brackets] only for details that are truly missing and would change the answer; never bracket something the user already said.${shape}${around}`
   const { rewrite } = await import('../src/ai')
   return rewrite({ apiKey: p.apiKey, model: p.model, mode: 'prompt', text: p.text, instructionOverride, signal: p.signal })
 }
