@@ -64,7 +64,8 @@
           "from": "native/build/axhelper",
           "to": "axhelper"
         }
-      ]
+      ],
+      "identity": null
     },
     "win": {
       "target": [
@@ -82,7 +83,8 @@
         "deb"
       ],
       "category": "Office"
-    }
+    },
+    "afterPack": "scripts/sign-mac.cjs"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

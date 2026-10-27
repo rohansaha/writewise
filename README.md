@@ -39,6 +39,23 @@ The builds are unsigned. On macOS the first launch needs **right-click → Open*
 
 If `npm install` printed a warning that install scripts were blocked (newer npm versions do this), run `node node_modules/electron/install.js` once before `npm run dist`.
 
+### Keep the Accessibility grant across rebuilds (macOS)
+
+The desktop app is not signed with an Apple Developer ID, so by default every build gets a new code identity and macOS forgets the Accessibility permission you granted to the previous one (System Settings still shows the switch on, but the new build is refused; `tccutil reset Accessibility app.writewise.desktop` clears the stale entries so the app prompts again). To make the identity stable, create a local code-signing certificate once; `npm run dist:mac` then signs every build with it automatically (see `scripts/sign-mac.cjs`).
+
+```bash
+# 1. a self-signed certificate valid for code signing (10 years)
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
+  -subj "/CN=WriteWise Local Signing" -addext "keyUsage=digitalSignature" -addext "extendedKeyUsage=codeSigning" -addext "basicConstraints=CA:false"
+openssl pkcs12 -export -inkey key.pem -in cert.pem -out writewise-signing.p12 -passout pass:writewise-local -name "WriteWise Local Signing"
+# 2. put it in your login keychain and let codesign use it
+security import writewise-signing.p12 -k ~/Library/Keychains/login.keychain-db -P writewise-local -T /usr/bin/codesign -T /usr/bin/security
+security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db cert.pem
+security find-identity -v -p codesigning   # should list "WriteWise Local Signing"
+```
+
+After that, build and install as usual, allow WriteWise under Accessibility one more time, and the grant survives future builds. `codesign -d -r- /Applications/WriteWise.app` shows the identity it is tied to. Keep the `.p12` and `key.pem` private and out of the repository.
+
 ## Deploy as a web app (PWA)
 
 ```bash
