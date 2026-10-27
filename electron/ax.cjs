@@ -29,7 +29,8 @@ class AxHelper extends EventEmitter {
 
   start() {
     if (this.proc || !this.available()) return
-    const proc = spawn(helperPath(), [], { stdio: ['pipe', 'pipe', 'pipe'] })
+    // --own-pid lets the helper ignore WriteWise's own windows (the overlay panel, the editor).
+    const proc = spawn(helperPath(), ['--own-pid', String(process.pid)], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.proc = proc
     proc.stdout.setEncoding('utf8')
     proc.stdout.on('data', (chunk) => {

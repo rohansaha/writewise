@@ -32,6 +32,12 @@ func emit(_ obj: [String: Any]) {
 // MARK: - Accessibility primitives
 
 let systemWide = AXUIElementCreateSystemWide()
+/// The WriteWise process that spawned us (--own-pid): its windows (the overlay panel, the editor) are never watched.
+let ownPid: pid_t = {
+  let a = CommandLine.arguments
+  if let i = a.firstIndex(of: "--own-pid"), i + 1 < a.count, let p = Int32(a[i + 1]) { return p }
+  return 0
+}()
 let textRoles: Set<String> = [kAXTextAreaRole as String, kAXTextFieldRole as String, kAXComboBoxRole as String]
 
 func axAttr(_ el: AXUIElement, _ name: String) -> AnyObject? {
@@ -79,6 +85,52 @@ func boundsForRange(_ el: AXUIElement, _ start: Int, _ length: Int) -> [Double]?
 /// element turns it on; the first queries after that can still fail for a moment, so callers retry.
 func enableChromiumAccessibility(_ app: AXUIElement) {
   _ = axSet(app, "AXManualAccessibility", kCFBooleanTrue)
+}
+
+/// Rich-text editors in Chromium (contenteditable: Claude, Slack, Notion, Gmail) only report character bounds on
+/// their static-text leaves, never on the editable element itself. Ranges in the editor's value are therefore
+/// mapped onto those leaves, found in document order and located in the value by sequential search (which
+/// skips the newlines the value inserts between paragraphs).
+struct Segment { let el: AXUIElement; let start: Int; let length: Int }
+
+func textSegments(_ root: AXUIElement, fullText: String) -> [Segment] {
+  let ns = fullText as NSString
+  var segments: [Segment] = []
+  var cursor = 0
+  var stack: [AXUIElement] = (axAttr(root, kAXChildrenAttribute) as? [AXUIElement] ?? []).reversed()
+  var visited = 0
+  while let el = stack.popLast(), visited < 3000 {
+    visited += 1
+    let role = axAttr(el, kAXRoleAttribute) as? String ?? ""
+    if role == (kAXStaticTextRole as String) {
+      if let v = axAttr(el, kAXValueAttribute) as? String, !v.isEmpty, cursor < ns.length {
+        let r = ns.range(of: v, options: [], range: NSRange(location: cursor, length: ns.length - cursor))
+        if r.location != NSNotFound {
+          segments.append(Segment(el: el, start: r.location, length: r.length))
+          cursor = r.location + r.length
+        }
+      }
+      continue
+    }
+    if let kids = axAttr(el, kAXChildrenAttribute) as? [AXUIElement] { stack.append(contentsOf: kids.reversed()) }
+  }
+  return segments
+}
+
+func boundsViaSegments(_ segments: [Segment], start: Int, length: Int) -> [Double]? {
+  var union: CGRect? = nil
+  let end = start + length
+  for seg in segments where seg.start < end && seg.start + seg.length > start {
+    let s = max(start, seg.start) - seg.start
+    let e = min(end, seg.start + seg.length) - seg.start
+    if e <= s { continue }
+    if let r = boundsForRange(seg.el, s, e - s) {
+      let rect = CGRect(x: r[0], y: r[1], width: r[2], height: r[3])
+      union = union.map { $0.union(rect) } ?? rect
+    }
+  }
+  guard let u = union else { return nil }
+  return [u.origin.x, u.origin.y, u.width, u.height]
 }
 
 func focusedElement() -> AXUIElement? {
@@ -218,6 +270,9 @@ final class Watcher {
   private var appElement: AXUIElement?
   private var windowElement: AXUIElement?
   private(set) var current: AXUIElement?
+  /// The last editable box reported, kept even when focus wanders (to our own panel, say) so edits still land.
+  private(set) var lastBox: AXUIElement?
+  private(set) var lastBoxPid: pid_t = 0
   private var pending: DispatchWorkItem?
   private var gen = 0
   private var retries = 0
@@ -241,6 +296,7 @@ final class Watcher {
 
   @objc private func appActivated(_ note: Notification) {
     guard on, let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+    if ownPid != 0 && app.processIdentifier == ownPid { return } // our own panel or window: keep watching the app being edited
     attach(app.processIdentifier)
   }
 
@@ -257,6 +313,7 @@ final class Watcher {
   }
 
   private func attach(_ pid: pid_t) {
+    if ownPid != 0 && pid == ownPid { return }
     detach()
     var obs: AXObserver?
     guard AXObserverCreate(pid, axCallback, &obs) == .success, let o = obs else { emitBlur(); return }
@@ -273,21 +330,36 @@ final class Watcher {
 
   func refocus() {
     guard let app = appElement, let o = observer else { return }
-    if let c = current { for n in elementNotes { AXObserverRemoveNotification(o, c, n as CFString) } }
-    if let w = windowElement { for n in windowNotes { AXObserverRemoveNotification(o, w, n as CFString) } }
-    current = nil
-    windowElement = nil
     guard let f = axAttr(app, kAXFocusedUIElementAttribute) else {
-      // Accessibility may still be switching on in a Chromium app: look again shortly.
+      // Two reasons this fails for a moment: accessibility is still switching on in a Chromium app, or the
+      // app's window just lost key status to our overlay panel. Keep the current box and look again before
+      // reporting a blur.
       retries += 1
-      if retries <= 3 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.refocus() } }
+      if retries <= 4 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.refocus() }
+        if current == nil { emitBlur() }
+        return
+      }
+      retries = 0
+      dropCurrent()
       emitBlur()
       return
     }
     retries = 0
     let el = f as! AXUIElement
-    guard let info = describe(el), info["editable"] as? Bool == true else { emitBlur(); return }
+    if let c = current, CFEqual(el, c) { emitText("focus"); return } // same box as before: nothing to re-subscribe
+    guard let info = describe(el), info["editable"] as? Bool == true else {
+      // Focus moved to something that is not a text box (often just our own overlay panel taking key status).
+      // Keep the last box as the write target so a fix chosen on the card still lands in it.
+      emitBlur()
+      return
+    }
+    dropCurrent()
     current = el
+    lastBox = el
+    var p: pid_t = 0
+    AXUIElementGetPid(el, &p)
+    lastBoxPid = p
     for n in elementNotes { AXObserverAddNotification(o, el, n as CFString, nil) }
     if let w = axAttr(app, kAXFocusedWindowAttribute) {
       let win = w as! AXUIElement
@@ -295,6 +367,14 @@ final class Watcher {
       for n in windowNotes { AXObserverAddNotification(o, win, n as CFString, nil) }
     }
     emitText("focus")
+  }
+
+  private func dropCurrent() {
+    guard let o = observer else { current = nil; windowElement = nil; return }
+    if let c = current { for n in elementNotes { AXObserverRemoveNotification(o, c, n as CFString) } }
+    if let w = windowElement { for n in windowNotes { AXObserverRemoveNotification(o, w, n as CFString) } }
+    current = nil
+    windowElement = nil
   }
 
   private func emitBlur() {
@@ -334,6 +414,28 @@ let axCallback: AXObserverCallback = { _, element, notification, _ in
   Watcher.shared.handle(notification as String, element)
 }
 
+/// Depth-first search of the front app's focused window for an editable text box whose description or
+/// role matches `match` (empty string: the first editable box). Used by tests and the "focus" command.
+func findTextBox(matching match: String) -> AXUIElement? {
+  guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
+  let app = AXUIElementCreateApplication(front.processIdentifier)
+  enableChromiumAccessibility(app)
+  var roots: [AXUIElement] = []
+  if let w = axAttr(app, kAXFocusedWindowAttribute) { roots.append(w as! AXUIElement) }
+  if let ws = axAttr(app, kAXWindowsAttribute) as? [AXUIElement] { roots.append(contentsOf: ws) }
+  var stack = roots
+  var seen = 0
+  while let el = stack.popLast(), seen < 6000 {
+    seen += 1
+    if let role = axAttr(el, kAXRoleAttribute) as? String, textRoles.contains(role) {
+      let desc = (axAttr(el, kAXDescriptionAttribute) as? String ?? "") + " " + (axAttr(el, kAXTitleAttribute) as? String ?? "")
+      if match.isEmpty || desc.localizedCaseInsensitiveContains(match) { return el }
+    }
+    if let kids = axAttr(el, kAXChildrenAttribute) as? [AXUIElement] { stack.append(contentsOf: kids.reversed()) }
+  }
+  return nil
+}
+
 // MARK: - commands
 
 func handleCommand(_ obj: [String: Any]) {
@@ -344,7 +446,26 @@ func handleCommand(_ obj: [String: Any]) {
     if let id = id { out["id"] = id }
     emit(out)
   }
-  func target() -> AXUIElement? { return Watcher.shared.current ?? focusedElement() }
+  /// The element an edit applies to: the watched box, else the last box in the requested process, else whatever has focus.
+  func target() -> AXUIElement? {
+    let wanted = obj["pid"] as? Int ?? 0
+    if let c = Watcher.shared.current {
+      var p: pid_t = 0
+      AXUIElementGetPid(c, &p)
+      if wanted == 0 || Int(p) == wanted { return c }
+    }
+    if let l = Watcher.shared.lastBox, wanted == 0 || Int(Watcher.shared.lastBoxPid) == wanted { return l }
+    if wanted != 0 {
+      // A specific app was named: use its own focused element, which works even when it is not in front.
+      let app = AXUIElementCreateApplication(pid_t(wanted))
+      enableChromiumAccessibility(app)
+      for _ in 0..<4 {
+        if let f = axAttr(app, kAXFocusedUIElementAttribute) { return (f as! AXUIElement) }
+        usleep(80_000)
+      }
+    }
+    return focusedElement()
+  }
 
   switch cmd {
   case "watch":
@@ -362,7 +483,15 @@ func handleCommand(_ obj: [String: Any]) {
   case "bounds":
     var rects: [Any] = []
     if let el = target(), let ranges = obj["ranges"] as? [[Int]] {
-      for r in ranges where r.count == 2 { rects.append(boundsForRange(el, r[0], r[1]) ?? NSNull()) }
+      var segments: [Segment]? = nil
+      for r in ranges where r.count == 2 {
+        var rect = boundsForRange(el, r[0], r[1])
+        if rect == nil {
+          if segments == nil { segments = textSegments(el, fullText: axAttr(el, kAXValueAttribute) as? String ?? "") }
+          rect = boundsViaSegments(segments!, start: r[0], length: r[1])
+        }
+        rects.append(rect ?? NSNull())
+      }
     }
     reply(["type": "bounds", "rects": rects])
   case "replace":
@@ -376,6 +505,15 @@ func handleCommand(_ obj: [String: Any]) {
       reply(["type": "select", "ok": false]); return
     }
     reply(["type": "select", "ok": axSet(el, kAXSelectedTextRangeAttribute, range) == .success])
+  case "focus":
+    let match = obj["match"] as? String ?? ""
+    guard let el = findTextBox(matching: match) else { reply(["type": "focus", "ok": false, "error": "no text box matching \"\(match)\""]); return }
+    let err = axSet(el, kAXFocusedAttribute, kCFBooleanTrue)
+    usleep(150_000)
+    var out = describe(el) ?? [:]
+    out["type"] = "focus"
+    out["ok"] = err == .success
+    reply(out)
   case "trusted":
     let prompt = obj["prompt"] as? Bool ?? false
     let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary

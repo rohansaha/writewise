@@ -10,7 +10,28 @@ const HOTKEY = 'CommandOrControl+Shift+G'
 
 // ---------- in-place editing through the macOS Accessibility helper ----------
 const { AxHelper } = require('./ax.cjs')
+const { createOverlay } = require('./overlay.cjs')
+const fs = require('node:fs')
 const ax = new AxHelper()
+let overlay = null
+
+// ---------- small persistent settings for the desktop shell ----------
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json')
+const shellSettings = { overlay: process.platform === 'darwin' }
+try { Object.assign(shellSettings, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))) } catch { /* first run */ }
+function saveShellSettings() {
+  try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(shellSettings, null, 2)) } catch (err) { console.warn('could not save settings', err) }
+}
+
+/** Switches the in-app underlines on or off and remembers the choice. */
+async function setOverlayEnabled(on) {
+  shellSettings.overlay = on
+  saveShellSettings()
+  if (!overlay) return
+  if (!on) return overlay.stop()
+  const ok = await overlay.start()
+  if (ok) notify('WriteWise', 'Suggestions will be underlined in other apps as you type.')
+}
 // Text boxes inside WriteWise itself are handled by its own editor; never rewrite them from outside.
 const OWN_BUNDLES = new Set(['app.writewise.desktop', 'com.github.Electron'])
 
@@ -230,6 +251,11 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Fix clipboard text', click: fixClipboard },
         { label: 'Turn clipboard into an AI prompt', click: promptifyClipboard },
+        ...(process.platform === 'darwin' ? [
+          { type: 'separator' },
+          { label: 'Underline suggestions in other apps', type: 'checkbox', checked: shellSettings.overlay, click: (item) => { setOverlayEnabled(item.checked) } },
+          { label: 'Open Accessibility settings…', click: () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility') },
+        ] : []),
       ],
     },
     { role: 'viewMenu' },
@@ -254,8 +280,12 @@ app.whenReady().then(() => {
   if (!globalShortcut.register(HOTKEY, fixInPlace)) console.warn('Could not register', HOTKEY)
   if (!globalShortcut.register('CommandOrControl+Shift+P', promptifyInPlace)) console.warn('Could not register CommandOrControl+Shift+P')
   getEngine().catch((err) => console.warn('engine preload failed', err))
+  if (process.platform === 'darwin' && ax.available()) {
+    overlay = createOverlay({ ax, getEngine, notify })
+    if (shellSettings.overlay) overlay.start().catch((err) => console.warn('overlay start failed', err))
+  }
   app.on('activate', () => { if (BrowserWindow.getAllWindows().filter((w) => w !== toastWin).length === 0) createWindow() })
 })
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); ax.stop() })
+app.on('will-quit', () => { globalShortcut.unregisterAll(); if (overlay) overlay.stop(); ax.stop() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

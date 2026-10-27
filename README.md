@@ -12,7 +12,7 @@ Everything runs on your device. Nothing leaves your computer unless you switch o
 - **AI rewrite (optional)** — "Improve", "Fix grammar", "Shorten", "Make formal/casual", "Sound confident", "Simplify", or a custom instruction, powered by the Claude API using **your own Anthropic API key** (stored only on your device).
 - **Works everywhere** — a desktop app for macOS, Windows and Linux, or an installable web app (PWA) that works offline once loaded.
 - **Browser extension** — grammar fixes and auto-correct in any text box on any site, including AI chat composers (Chrome/Edge/Brave).
-- **Inside Claude** — a Claude Code hook that proofreads every prompt automatically, an MCP server for Claude Desktop, and a clipboard hotkey that fixes text before you paste it into any chat box.
+- **Inside Claude** — a Claude Code hook that proofreads every prompt automatically, an MCP server for Claude Desktop, and, on macOS, Grammarly-style underlines plus an in-place fix hotkey inside any app, including Claude's chat box.
 - Personal dictionary, dismiss-and-forget, keyboard shortcuts (⌘/Ctrl+S save, ⌘/Ctrl+O open, ⌘/Ctrl+N new), autosave, light/dark theme.
 
 ## Quick start (development)
@@ -86,9 +86,14 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
 
 Tools exposed: `proofread_text`, `analyze_prompt` (prompt score, missing elements, vague words, structured version) and `check_text`. To make Claude use it on every message, add a line to your profile preferences or project instructions such as: *"Before answering, call writewise's `analyze_prompt` on my message and work from the corrected, structured version."*
 
-### 3. Any app, including Claude's chat box: the clipboard hotkey
+### 3. Any app, including Claude's chat box: underlines and in-place fixes (macOS)
 
-With the desktop app running, copy text anywhere, press **⌘⇧G** (Ctrl+Shift+G on Windows/Linux), and paste: spelling and grammar are fixed. **⌘⇧P** turns the clipboard text into a structured AI prompt with `[placeholders]` for whatever is missing. Both are also in the app's Tools menu.
+With the desktop app running on macOS, WriteWise works inside other apps the way Grammarly does, through the macOS Accessibility API:
+
+- **Underlines as you type.** Pause for a moment in any text box (Claude, Slack, Mail, Chrome, a native text view) and spelling, grammar and clarity issues are underlined in place. Click an underline for a card with the explanation and one-click replacements; **Dismiss** hides that suggestion. Turn it off or on under **Tools → Underline suggestions in other apps**.
+- **⌘⇧G** fixes the text box that has focus, in place, keeping your caret where it was. Select part of the text first to fix only that part. **⌘⇧P** rewrites the box (or the selection) into a structured AI prompt with `[placeholders]` for whatever is missing.
+
+The first time, macOS asks you to allow WriteWise under **System Settings → Privacy & Security → Accessibility**; nothing works in other apps until that switch is on (the Tools menu has a shortcut to it). Password fields are never read or changed, and everything runs offline. Where no text box has focus, or on Windows and Linux, both hotkeys fall back to fixing the clipboard: copy, press the hotkey, paste.
 
 ### Command line
 

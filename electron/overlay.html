@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>WriteWise overlay</title>
+<style>
+  html, body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; background: transparent; font: 13px/1.4 -apple-system, system-ui, sans-serif; -webkit-user-select: none; }
+  .u { position: absolute; cursor: pointer; }
+  .u::after { content: ""; position: absolute; left: 0; right: 0; bottom: 1px; height: 2px; border-radius: 2px; background: #e5484d; }
+  .u.clarity::after, .u.tone::after, .u.prompt::after, .u.style::after { background: #f0a020; }
+  .u:hover::after, .u.open::after { height: 3px; }
+  .card { position: absolute; width: 300px; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; background: #fff; color: #15171a; box-shadow: 0 10px 30px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.08); z-index: 10; }
+  .card h1 { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
+  .card p { margin: 0 0 10px; }
+  .card .reps button { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 8px 10px; border: 0; border-radius: 8px; background: #eef3ff; color: #1a4fd8; font: inherit; font-weight: 600; cursor: pointer; }
+  .card .reps button:hover { background: #dde7ff; }
+  .card .reps s { opacity: .55; font-weight: 400; }
+  .card .row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+  .card .ghost { padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: #666; font: inherit; cursor: pointer; }
+  .card .ghost:hover { background: #f0f0f0; }
+  @media (prefers-color-scheme: dark) {
+    .card { background: #1f2125; color: #ececec; box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.1); }
+    .card .reps button { background: #243049; color: #9ec1ff; }
+    .card .reps button:hover { background: #2d3b5a; }
+    .card .ghost { color: #aaa; }
+    .card .ghost:hover { background: #2a2d33; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  const root = document.getElementById('root')
+  let state = { items: [], card: null, size: [0, 0] }
+  let hovering = false
+  const CARD_W = 300, CARD_H = 190
+  function setHover(v) { if (hovering !== v) { hovering = v; window.overlay.hover(v) } }
+  function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]) }
+  function closeCard() { state.card = null; window.overlay.card(null); setHover(false); render() }
+
+  function render() {
+    root.innerHTML = ''
+    for (const it of state.items) {
+      const u = document.createElement('div')
+      u.className = 'u ' + it.category + (state.card === it.id ? ' open' : '')
+      u.style.left = it.x + 'px'; u.style.top = it.y + 'px'
+      u.style.width = Math.max(4, it.w) + 'px'; u.style.height = Math.max(6, it.h) + 'px'
+      u.title = it.title
+      u.onmouseenter = () => setHover(true)
+      u.onmouseleave = () => { if (state.card !== it.id) setHover(false) }
+      u.onclick = (e) => { e.stopPropagation(); state.card = state.card === it.id ? null : it.id; window.overlay.card(state.card); render(); report() }
+      root.appendChild(u)
+    }
+    const it = state.items.find((i) => i.id === state.card)
+    if (!it) return
+    const c = document.createElement('div')
+    c.className = 'card'
+    const left = Math.min(Math.max(8, it.x), Math.max(8, state.size[0] - CARD_W - 8))
+    const below = it.y + it.h + 8
+    const top = below + CARD_H > state.size[1] ? Math.max(8, it.y - 8 - CARD_H) : below
+    c.style.left = left + 'px'; c.style.top = top + 'px'
+    const reps = it.replacements.map((r, i) => `<button data-i="${i}"><s>${esc(it.actual)}</s> &rarr; ${esc(r)}</button>`).join('')
+    c.innerHTML = `<h1>${esc(it.title)}</h1><p>${esc(it.message)}</p><div class="reps">${reps}</div>` +
+      `<div class="row"><button class="ghost" data-act="dismiss">Dismiss</button><button class="ghost" data-act="close">Close</button></div>`
+    c.onmouseenter = () => setHover(true)
+    c.onmouseleave = () => setHover(false)
+    c.onclick = (e) => {
+      const b = e.target.closest('button')
+      if (!b) return
+      if (b.dataset.i != null) { window.overlay.apply(it.id, it.replacements[+b.dataset.i]); state.card = null; setHover(false); render() }
+      else if (b.dataset.act === 'dismiss') { window.overlay.dismiss(it.id); state.card = null; setHover(false); render() }
+      else closeCard()
+    }
+    root.appendChild(c)
+  }
+
+  window.overlay.onRender((payload) => { state = payload; render(); report() })
+  window.overlay.debug({ loaded: true })
+  document.addEventListener('mousedown', (e) => window.overlay.debug({ mousedown: [e.clientX, e.clientY], target: e.target.className || e.target.tagName }), true)
+  document.addEventListener('mousemove', (e) => { if (!window.__mm) { window.__mm = true; window.overlay.debug({ firstMousemove: [e.clientX, e.clientY] }) } }, true)
+  // Geometry report used by automated tests (only logged when WRITEWISE_DEBUG is set).
+  function report() {
+    const rect = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] }
+    const underlines = [...root.querySelectorAll('.u')].map(rect)
+    const card = root.querySelector('.card')
+    window.overlay.regions(card ? [...underlines, rect(card)] : underlines)
+    window.overlay.debug({ underlines, buttons: [...root.querySelectorAll('.card button')].map((b) => ({ text: b.textContent.trim(), rect: rect(b) })) })
+  }
+</script>
+</body>
+</html>
