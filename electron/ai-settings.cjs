@@ -11,6 +11,47 @@ const net = require('node:net')
 const path = require('node:path')
 
 const DEFAULT_MODEL = 'claude-opus-5-5'
+
+// ---------- macOS: the key lives in the login keychain, managed through Apple's /usr/bin/security ----------
+// Items an app creates itself through safeStorage are locked to that exact build (its code hash) unless the app is
+// signed by an Apple developer team, so every rebuild of WriteWise asked for keychain access again. Items written by
+// Apple's security tool and readable by it stay accessible across rebuilds. The key never appears on a command line:
+// commands are fed to `security -i` on stdin.
+const { execFile, spawn } = require('node:child_process')
+const KC_SERVICE = 'WriteWise'
+const KC_ACCOUNT = 'anthropic-api-key'
+const useMacKeychain = process.platform === 'darwin'
+
+function kcQuote(v) { return '"' + String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' }
+
+function kcRun(command) {
+  return new Promise((resolve, reject) => {
+    const p = spawn('/usr/bin/security', ['-i'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    let out = ''
+    let err = ''
+    p.stdout.on('data', (d) => { out += d })
+    p.stderr.on('data', (d) => { err += d })
+    p.on('error', reject)
+    p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err.trim() || 'security exited with ' + code))))
+    p.stdin.end(command + '\n')
+  })
+}
+
+function kcRead() {
+  return new Promise((resolve) => {
+    execFile('/usr/bin/security', ['find-generic-password', '-s', KC_SERVICE, '-a', KC_ACCOUNT, '-w'], { timeout: 15000 }, (error, stdout) => {
+      resolve(error ? '' : String(stdout).replace(/\n$/, ''))
+    })
+  })
+}
+
+async function kcWrite(key) {
+  if (!key) {
+    await new Promise((resolve) => execFile('/usr/bin/security', ['delete-generic-password', '-s', KC_SERVICE, '-a', KC_ACCOUNT], () => resolve()))
+    return
+  }
+  await kcRun(`add-generic-password -U -s ${kcQuote(KC_SERVICE)} -a ${kcQuote(KC_ACCOUNT)} -l ${kcQuote('WriteWise Anthropic API key')} -T /usr/bin/security -w ${kcQuote(key)}`)
+}
 const file = () => path.join(app.getPath('userData'), 'ai-settings.json')
 
 let cache = null // the decrypted store; dropped on every write
@@ -33,7 +74,15 @@ async function decryptKey(buf) {
   throw lastErr || new Error('could not decrypt')
 }
 
+let reading = null // one read at a time, so two callers never migrate the key twice
 async function readStore() {
+  if (cache) return cache
+  if (reading) return reading
+  reading = readStoreOnce().finally(() => { reading = null })
+  return reading
+}
+
+async function readStoreOnce() {
   if (cache) return cache
   let raw
   try { raw = fs.readFileSync(file(), 'utf8') } catch (err) {
@@ -45,6 +94,10 @@ async function readStore() {
     const model = typeof j.model === 'string' ? j.model : ''
     let apiKey = ''
     let plain = false
+    if (useMacKeychain && j.keychain) {
+      apiKey = await kcRead()
+      return (cache = { apiKey: apiKey.trim(), model, plain: false, exists: true })
+    }
     if (typeof j.key === 'string' && j.key) {
       if (j.encrypted) {
         const r = await decryptKey(Buffer.from(j.key, 'base64'))
@@ -54,6 +107,10 @@ async function readStore() {
         apiKey = j.key
         plain = true
       }
+    }
+    if (useMacKeychain && apiKey) {
+      // One-time move of a key stored the old way into the keychain; later builds never prompt for it.
+      try { await writeStore({ apiKey, model }); console.log('[ai-settings] moved the API key into the login keychain') } catch (e) { console.warn('could not move the key to the keychain:', e.message) }
     }
     return (cache = { apiKey: apiKey.trim(), model, plain, exists: true })
   } catch (err) {
@@ -66,6 +123,14 @@ async function readStore() {
 
 async function writeStore({ apiKey, model }) {
   const key = String(apiKey || '').trim()
+  if (useMacKeychain) {
+    await kcWrite(key)
+    const j = { version: 2, model: String(model || ''), keychain: true, hasKey: !!key, updatedAt: new Date().toISOString() }
+    fs.mkdirSync(path.dirname(file()), { recursive: true })
+    fs.writeFileSync(file(), JSON.stringify(j, null, 2) + '\n', { mode: 0o600 })
+    cache = null
+    return
+  }
   let encrypted = false
   let stored = key
   if (key) {
