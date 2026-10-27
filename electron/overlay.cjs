@@ -230,15 +230,26 @@ function createOverlay({ ax, getEngine, notify }) {
   })
 
   // ---------- lifecycle ----------
-  /** Turns the overlay on. Resolves false when macOS has not granted Accessibility access yet. */
+  let trustTimer = null
+  let prompted = false
+  /**
+   * Turns the overlay on. Resolves false when macOS has not granted Accessibility access yet; in that case the
+   * system prompt is shown once and the permission is re-checked every few seconds, so the underlines start as
+   * soon as the user flips the switch, with no relaunch.
+   */
   async function start() {
     enabled = true
+    clearTimeout(trustTimer)
     if (!ax.available()) return false
     try {
       const t = await ax.request({ cmd: 'trusted', prompt: false })
       if (!t.ok) {
-        await ax.request({ cmd: 'trusted', prompt: true })
-        notify('WriteWise needs Accessibility access', 'Allow WriteWise under System Settings > Privacy & Security > Accessibility to underline suggestions in other apps.')
+        if (!prompted) {
+          prompted = true
+          await ax.request({ cmd: 'trusted', prompt: true })
+          notify('WriteWise needs Accessibility access', 'Allow WriteWise under System Settings > Privacy & Security > Accessibility to underline suggestions in other apps.')
+        }
+        trustTimer = setTimeout(() => { if (enabled) start().then((ok) => { if (ok) notify('WriteWise', 'Thanks! Suggestions will now be underlined in other apps as you type.') }).catch(() => {}) }, 4000)
         return false
       }
       await ax.request({ cmd: 'watch', on: true })
@@ -251,6 +262,7 @@ function createOverlay({ ax, getEngine, notify }) {
 
   function stop() {
     enabled = false
+    clearTimeout(trustTimer)
     box = null
     clear()
     if (ax.available()) { try { ax.send({ cmd: 'watch', on: false }) } catch { /* helper gone */ } }
