@@ -10,7 +10,8 @@ const HOTKEY = 'CommandOrControl+Shift+G'
 
 // ---------- in-place editing through the macOS Accessibility helper ----------
 const { AxHelper } = require('./ax.cjs')
-const { createOverlay } = require('./overlay.cjs')
+const { createOverlay, splitSentences, buildSentences } = require('./overlay.cjs')
+const SENTENCE_HOTKEY = 'Alt+Shift+G'
 const fs = require('node:fs')
 const ax = new AxHelper()
 let overlay = null
@@ -196,6 +197,63 @@ async function fixInPlace() {
   }
 }
 
+/**
+ * Alt+Shift+G: fix the sentence under the caret (or the selected text) in place. Uses Claude with the whole
+ * box as context when an API key is set in Settings, otherwise the offline engine's whole-sentence fix.
+ */
+async function fixSentenceInPlace() {
+  const box = await focusedBox()
+  if (!box) {
+    if (ax.available() && !(await ensureTrusted())) return
+    return notify('WriteWise', 'Click into a text box first, then press the hotkey.')
+  }
+  const text = box.text || ''
+  let start, end
+  if (box.selLen > 0) {
+    start = box.selStart
+    end = box.selStart + box.selLen
+  } else {
+    const caret = Math.max(0, Math.min(box.selStart || 0, text.length))
+    const hit = splitSentences(text).find((r) => caret >= r.start && caret <= r.end) || splitSentences(text).find((r) => r.start > caret)
+    if (!hit) return notify('WriteWise', 'No sentence at the cursor.')
+    start = hit.start
+    end = hit.end
+  }
+  const sentence = text.slice(start, end)
+  if (!sentence.trim()) return notify('WriteWise', 'No sentence at the cursor.')
+  const where = box.app || 'the active app'
+  try {
+    const { m, checker } = await getEngine()
+    const settings = await getAiSettings()
+    let fixed = null
+    let how = 'offline'
+    if (settings.apiKey) {
+      notify('WriteWise', 'Asking Claude to fix this sentence…')
+      how = 'Claude'
+      fixed = await m.rewriteSentence({ apiKey: settings.apiKey, model: settings.model, sentence, context: text })
+    } else {
+      const result = await checker.check(text, { ...m.DEFAULT_CHECK_OPTIONS, mode: 'writing' })
+      const item = buildSentences(text, result.issues, m).find((it) => it.start <= start && it.end >= end) || null
+      fixed = item ? (box.selLen > 0 ? null : item.fixed) : null
+      if (fixed === null) {
+        // A selection, or a sentence the splitter sees differently: fix the exact range with the safe fixes.
+        const local = result.issues.filter((i) => i.start >= start && i.end <= end).map((i) => ({ ...i, start: i.start - start, end: i.end - start }))
+        fixed = m.autoFix(sentence, local).text
+      }
+    }
+    // The box may have changed while Claude was thinking: only apply if the sentence is still where it was.
+    const now = await focusedBox()
+    if (!now || now.text.slice(start, end) !== sentence) return notify('WriteWise', 'The text changed meanwhile; nothing was replaced.')
+    if (!fixed || fixed === sentence) return notify('WriteWise', `No changes needed in this sentence (${how}).`)
+    const r = await ax.request({ cmd: 'replace', pid: box.pid, start, length: end - start, text: fixed })
+    if (!r.ok) throw new Error(r.error || 'replace failed')
+    await ax.request({ cmd: 'select', pid: box.pid, start: start + fixed.length, length: 0 })
+    notify('WriteWise', `Fixed this sentence (${how}) in ${where}.`)
+  } catch (err) {
+    notify('WriteWise', 'Could not fix the sentence: ' + (err && err.message ? err.message : err))
+  }
+}
+
 /** Cmd+Shift+P: turn the focused text box (or its selection) into a structured AI prompt, in place. */
 async function promptifyInPlace() {
   const box = await focusedBox()
@@ -268,6 +326,7 @@ function buildMenu() {
       label: 'Tools',
       submenu: [
         { label: 'Fix text in the active app', accelerator: HOTKEY, click: fixInPlace },
+        { label: 'Fix the current sentence (Claude when a key is set)', accelerator: SENTENCE_HOTKEY, click: fixSentenceInPlace },
         { label: 'Turn the active text into an AI prompt', accelerator: 'CommandOrControl+Shift+P', click: promptifyInPlace },
         { type: 'separator' },
         { label: 'Fix clipboard text', click: fixClipboard },
@@ -299,6 +358,7 @@ app.whenReady().then(() => {
   createWindow()
   // Global hotkeys work even when another app (e.g. a chat window) is in front.
   if (!globalShortcut.register(HOTKEY, fixInPlace)) console.warn('Could not register', HOTKEY)
+  if (!globalShortcut.register(SENTENCE_HOTKEY, fixSentenceInPlace)) console.warn('Could not register', SENTENCE_HOTKEY)
   if (!globalShortcut.register('CommandOrControl+Shift+P', promptifyInPlace)) console.warn('Could not register CommandOrControl+Shift+P')
   getEngine().catch((err) => console.warn('engine preload failed', err))
   if (process.platform === 'darwin' && ax.available()) {
