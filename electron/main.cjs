@@ -6,7 +6,9 @@ const { pathToFileURL } = require('node:url')
 
 const DIST = path.join(__dirname, '..', 'dist')
 const ENGINE = path.join(__dirname, '..', 'bin', 'writewise.mjs')
-const HOTKEY = 'CommandOrControl+Shift+G'
+// Global hotkeys. Cmd/Ctrl+Shift+P is left alone on purpose: it is VS Code's command palette everywhere.
+const HOTKEY = 'CommandOrControl+Shift+G'  // fix the focused box (macOS) or the clipboard
+const PROMPT_HOTKEY = 'Alt+Shift+P'         // turn the focused box (macOS) or the clipboard into an AI prompt
 
 // ---------- in-place editing through the macOS Accessibility helper ----------
 const { AxHelper } = require('./ax.cjs')
@@ -205,6 +207,7 @@ async function fixSentenceInPlace() {
   const box = await focusedBox()
   if (!box) {
     if (ax.available() && !(await ensureTrusted())) return
+    if (!ax.available()) return fixClipboardSentence()
     return notify('WriteWise', 'Click into a text box first, then press the hotkey.')
   }
   const text = box.text || ''
@@ -254,7 +257,29 @@ async function fixSentenceInPlace() {
   }
 }
 
-/** Cmd+Shift+P: turn the focused text box (or its selection) into a structured AI prompt, in place. */
+/** Windows/Linux form of the sentence hotkey: fix the copied sentence (Claude when a key is set) and put it back. */
+async function fixClipboardSentence() {
+  const text = (await clipboard.readText()) || ''
+  if (!text.trim()) return notify('WriteWise', 'Copy a sentence first, then press the hotkey, then paste.')
+  try {
+    const { m, checker } = await getEngine()
+    const settings = await getAiSettings()
+    let fixed
+    if (settings.apiKey) {
+      notify('WriteWise', 'Asking Claude to fix this sentence…')
+      fixed = await m.rewriteSentence({ apiKey: settings.apiKey, model: settings.model, sentence: text, context: text })
+    } else {
+      fixed = (await m.fixText(checker, text, { mode: 'writing' })).fixed
+    }
+    if (!fixed || fixed === text) return notify('WriteWise', 'No changes needed. Paste to use the text.')
+    await clipboard.writeText(fixed)
+    notify('WriteWise', `Fixed the sentence (${settings.apiKey ? 'Claude' : 'offline'}). Paste to use it.`)
+  } catch (err) {
+    notify('WriteWise', 'Could not fix the sentence: ' + (err && err.message ? err.message : err))
+  }
+}
+
+/** Alt+Shift+P: turn the focused text box (or its selection) into a structured AI prompt, in place. */
 async function promptifyInPlace() {
   const box = await focusedBox()
   if (!box) {
@@ -327,7 +352,7 @@ function buildMenu() {
       submenu: [
         { label: 'Fix text in the active app', accelerator: HOTKEY, click: fixInPlace },
         { label: 'Fix the current sentence (Claude when a key is set)', accelerator: SENTENCE_HOTKEY, click: fixSentenceInPlace },
-        { label: 'Turn the active text into an AI prompt', accelerator: 'CommandOrControl+Shift+P', click: promptifyInPlace },
+        { label: 'Turn the active text into an AI prompt', accelerator: PROMPT_HOTKEY, click: promptifyInPlace },
         { type: 'separator' },
         { label: 'Fix clipboard text', click: fixClipboard },
         { label: 'Turn clipboard into an AI prompt', click: promptifyClipboard },
@@ -359,7 +384,7 @@ app.whenReady().then(() => {
   // Global hotkeys work even when another app (e.g. a chat window) is in front.
   if (!globalShortcut.register(HOTKEY, fixInPlace)) console.warn('Could not register', HOTKEY)
   if (!globalShortcut.register(SENTENCE_HOTKEY, fixSentenceInPlace)) console.warn('Could not register', SENTENCE_HOTKEY)
-  if (!globalShortcut.register('CommandOrControl+Shift+P', promptifyInPlace)) console.warn('Could not register CommandOrControl+Shift+P')
+  if (!globalShortcut.register(PROMPT_HOTKEY, promptifyInPlace)) console.warn('Could not register', PROMPT_HOTKEY)
   getEngine().catch((err) => console.warn('engine preload failed', err))
   if (process.platform === 'darwin' && ax.available()) {
     overlay = createOverlay({ ax, getEngine, notify, getAiSettings })

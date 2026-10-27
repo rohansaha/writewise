@@ -112,8 +112,18 @@ Tools exposed: `proofread_text`, `analyze_prompt` (prompt score, missing element
 With the desktop app running on macOS, WriteWise works inside other apps the way Grammarly does, through the macOS Accessibility API:
 
 - **Sentence suggestions as you type.** Pause for a moment in any text box (Claude, Slack, Mail, Chrome, a native text view) and each sentence with a problem is highlighted in place, with the flagged words underlined inside it. Click the sentence for a card that shows the corrected sentence as a whole (changes marked) and applies it with one click; findings without a fix (passive voice, hard to read) are listed as notes. With an Anthropic API key in Settings, the card leads with Claude's correction: as soon as it opens, Claude corrects the sentence using the whole message as context, so "their/there", tense and agreement are judged in context, and **Fix sentence** applies that version (the offline fix stays one click away). Each sentence is sent once; nothing is sent until you open its card. **Dismiss** hides that sentence's suggestions. Turn the feature off or on under **Tools → Underline suggestions in other apps**.
-- **⌘⇧G** fixes the text box that has focus, in place, keeping your caret where it was. Select part of the text first to fix only that part. **⌘⇧P** rewrites the box (or the selection) into a structured AI prompt with `[placeholders]` for whatever is missing.
+- **⌘⇧G** fixes the text box that has focus, in place, keeping your caret where it was. Select part of the text first to fix only that part. **⌥⇧P** rewrites the box (or the selection) into a structured AI prompt with `[placeholders]` for whatever is missing.
 - **⌥⇧G** fixes just the sentence under the cursor (or the selected text), in place. With an API key in Settings it asks Claude, using the whole box as context; otherwise it applies the offline fix. The cursor lands at the end of the fixed sentence.
+
+**Shortcuts by platform.** The hotkeys are global (they work while any app is in front) as long as WriteWise is running. Cmd/Ctrl+Shift+P is deliberately not used: it is the VS Code command palette.
+
+| Action | macOS | Windows / Linux |
+|---|---|---|
+| Fix the focused text box in place (macOS); fix the clipboard elsewhere | ⌘⇧G | Ctrl+Shift+G |
+| Fix the sentence at the cursor in place (macOS); fix the copied sentence elsewhere. Claude when a key is set | ⌥⇧G | Alt+Shift+G |
+| Turn the box (macOS) or the clipboard into a structured AI prompt | ⌥⇧P | Alt+Shift+P |
+
+On Windows and Linux there is no in-app overlay and no in-place editing yet (both need the macOS Accessibility helper), so the flow is: copy, press the hotkey, paste. The web app, the Chrome extension and the Claude Code hook work the same on every platform.
 
 The first time, macOS asks you to allow WriteWise under **System Settings → Privacy & Security → Accessibility**; nothing works in other apps until that switch is on (the Tools menu has a shortcut to it). Password fields are never read or changed, and everything runs offline. Where no text box has focus, or on Windows and Linux, both hotkeys fall back to fixing the clipboard: copy, press the hotkey, paste.
 
