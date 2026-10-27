@@ -205,10 +205,40 @@ async function fixInPlace() {
       total += edits.length
       text = step.text
     }
+    // Then the sentences the on-screen highlights still flag. With an API key, Claude corrects each one using the
+    // whole box as context (so 'shud', 'their going too' are judged in context). Without a key, nothing is guessed:
+    // the remaining highlights are counted so the toast can point the user at them.
+    let pending = 0
+    let usedClaude = false
+    {
+      const result = await checker.check(text, opts)
+      const items = buildSentences(text, result.issues, m)
+      const settings = items.length ? await getAiSettings() : { apiKey: '' }
+      if (settings.apiKey && items.length) {
+        notify('WriteWise', `Asking Claude to fix ${items.length} sentence${items.length === 1 ? '' : 's'}…`)
+        const context = text
+        const fixes = await Promise.all(items.map((it) => m.rewriteSentence({ apiKey: settings.apiKey, model: settings.model, sentence: it.sentence, context }).catch(() => null)))
+        const now = await focusedBox()
+        const live = now ? (hasSel ? now.text.slice(base, base + text.length) : now.text) : null
+        if (live !== text) return notify('WriteWise', 'The text changed while Claude was working; nothing more was replaced.')
+        const order = items.map((it, i) => ({ it, fixed: fixes[i] })).filter((x) => x.fixed && x.fixed !== x.it.sentence).sort((a, b) => b.it.start - a.it.start)
+        for (const { it, fixed } of order) {
+          const r = await ax.request({ cmd: 'replace', start: base + it.start, length: it.end - it.start, text: fixed })
+          if (!r.ok) throw new Error(r.error || 'replace failed')
+          if (caret !== null) caret = mapCaret(caret, [{ start: it.start, end: it.end, replacement: fixed }])
+          text = text.slice(0, it.start) + fixed + text.slice(it.end)
+          total += 1
+          usedClaude = true
+        }
+      } else {
+        pending = items.length
+      }
+    }
+    if (!total && pending) return notify('WriteWise', `${pending} highlighted sentence${pending === 1 ? ' needs' : 's need'} a choice: click the highlight, or add an API key in Settings so this shortcut can ask Claude.`)
     if (!total) return notify('WriteWise', 'No spelling or grammar fixes needed in ' + where + '.')
     if (hasSel) await ax.request({ cmd: 'select', start: base, length: text.length })
     else await ax.request({ cmd: 'select', start: base + Math.min(caret, text.length), length: 0 })
-    notify('WriteWise', `Fixed ${total} issue${total === 1 ? '' : 's'} in ${where}.`)
+    notify('WriteWise', `Fixed ${total} issue${total === 1 ? '' : 's'} in ${where}${usedClaude ? ' (with Claude)' : ''}.${pending ? ` ${pending} highlight${pending === 1 ? '' : 's'} left to review.` : ''}`)
   } catch (err) {
     notify('WriteWise', 'Could not fix the text in place: ' + (err && err.message ? err.message : err))
   }
