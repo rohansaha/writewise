@@ -4,7 +4,7 @@ import type { Category, CheckOptions, DocStats, Issue, Mode, PromptReport, Setti
 import { acceptAllSafe, applyReplacement, createEditor, dismissIssue, focusIssue, getIssues, getText, replaceRange, setIssuesEffect, setText, type IssueRange } from './editor'
 import { checkWithLanguageTool, LT_MAX_CHARS } from './cloud'
 import { rewrite, type AiMode } from './ai'
-import { loadDoc, loadSettings, saveDoc, saveSettings } from './settings'
+import { hydrateAiSettings, isDesktop, loadDoc, loadSettings, saveAiSettings, saveDoc, saveSettings, type AiState } from './settings'
 import { registerServiceWorker } from './pwa'
 import { analyzePrompt, buildPromptTemplate } from './engine/prompt'
 
@@ -12,6 +12,12 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 
 // ---------- state ----------
 let settings: Settings = loadSettings()
+// In the desktop app the Anthropic key lives in the OS keychain (shared with the hotkeys, the overlay and the
+// other WriteWise surfaces): pull it in, and drop any copy that older versions left in localStorage.
+let aiState: AiState = { aiKey: settings.aiKey, aiModel: settings.aiModel, source: 'local', stored: true }
+hydrateAiSettings(settings)
+  .then((s) => { aiState = s; settings.aiKey = s.aiKey; settings.aiModel = s.aiModel })
+  .catch((err) => console.warn('AI settings unavailable:', err))
 let filter: Category | 'all' = 'all'
 let stats: DocStats | null = null
 let tone: Tone | null = null
@@ -431,14 +437,27 @@ function openSettings() {
   $<HTMLInputElement>('#set-profanity').checked = settings.profanity
   $<HTMLInputElement>('#set-cloud').checked = settings.cloud
   $<HTMLSelectElement>('#set-lang').value = settings.language
-  $<HTMLInputElement>('#set-aikey').value = settings.aiKey
+  // A key that only comes from the environment or config.json is used but not shown, so one typed here wins.
+  $<HTMLInputElement>('#set-aikey').value = aiState.stored ? settings.aiKey : ''
   $<HTMLSelectElement>('#set-aimodel').value = settings.aiModel
+  const note = $('#set-aikey-note')
+  note.hidden = !isDesktop
+  if (isDesktop) note.textContent = aiKeyNote(aiState)
   $<HTMLTextAreaElement>('#set-personal').value = settings.personal.join('\n')
   dlg.showModal()
 }
+function aiKeyNote(s: AiState): string {
+  const shared = 'shared with the hotkeys, the in-app overlay and the browser extension'
+  switch (s.source) {
+    case 'env': return `No key saved in the app yet; using ANTHROPIC_API_KEY from the environment (${shared}). A key entered here takes precedence and is kept in your system keychain.`
+    case 'config': return `No key saved in the app yet; using the one from ~/.config/writewise/config.json (${shared}). A key entered here takes precedence and is kept in your system keychain.`
+    case 'app-plain': return `Saved by the app without encryption because no system keyring was found; ${shared}.`
+    default: return `Kept in your system keychain by the desktop app, never in the editor's local storage; ${shared}, so you enter it once.`
+  }
+}
 $('#btn-settings').addEventListener('click', openSettings)
 $('#set-cancel').addEventListener('click', () => dlg.close())
-$('#set-save').addEventListener('click', (ev) => {
+$('#set-save').addEventListener('click', async (ev) => {
   ev.preventDefault()
   settings = {
     ...settings,
@@ -454,6 +473,14 @@ $('#set-save').addEventListener('click', (ev) => {
     personal: $<HTMLTextAreaElement>('#set-personal').value.split(/\n+/).map((w) => w.trim()).filter(Boolean),
   }
   saveSettings(settings)
+  try {
+    // Desktop: into the keychain store; the result is what is now in effect (a cleared field falls back to the environment).
+    aiState = await saveAiSettings(settings.aiKey, settings.aiModel)
+    settings.aiKey = aiState.aiKey
+    settings.aiModel = aiState.aiModel
+  } catch (err) {
+    console.warn('could not save the API key:', err)
+  }
   cloudToggle.checked = settings.cloud
   dlg.close()
   scheduleLocal(0)

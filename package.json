@@ -41,6 +41,9 @@
       "electron/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "bin/**/*"
+    ],
     "mac": {
       "target": [
         {

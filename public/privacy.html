@@ -14,22 +14,24 @@
 </head>
 <body>
 <h1>WriteWise privacy policy</h1>
-<p><em>Last updated: 26 October 2026</em></p>
+<p><em>Last updated: 27 October 2026</em></p>
 <p>WriteWise is a free, open-source writing assistant (web app, desktop app, browser extension, Google Docs add-on and command-line tool). It is built so that your text stays on your device.</p>
 
 <h2>What the browser extension does with your text</h2>
 <ul>
   <li>The extension reads the text box you are typing in so it can show spelling, grammar and clarity suggestions and, on sites you enable, apply safe fixes as you type.</li>
-  <li>All checking happens inside your browser with a bundled dictionary and rule engine. The extension makes <strong>no network requests</strong> and never sends your text, page content or browsing activity anywhere.</li>
+  <li>All checking happens inside your browser with a bundled dictionary and rule engine. The extension makes <strong>no network requests</strong> and never sends your text, page content or browsing activity anywhere, with one exception that you control: the optional <strong>Claude</strong> feature below.</li>
   <li>It stores only your preferences (which sites are enabled and which sites auto-fix) using the browser's extension storage, which may sync between your own browsers if you are signed in to your browser profile.</li>
   <li>Password fields are ignored.</li>
+  <li><strong>Claude (optional, off by default).</strong> If you switch it on in the popup and enter your own Anthropic API key, a "Fix with Claude" button appears. Only when you click it, the text of that one text box is sent to Anthropic's API (api.anthropic.com) with your key, and Anthropic's <a href="https://www.anthropic.com/legal/privacy">privacy policy</a> applies to that request. Nothing is sent automatically, and nothing is sent while the feature is off. The key is kept in the browser's local extension storage, which is never synced, and can be removed in the popup at any time.</li>
+  <li><strong>Desktop app bridge (optional).</strong> "Use the desktop app's key" asks the WriteWise desktop app, if it is installed and running on the same computer, for the API key you already entered there, through the browser's native messaging (the browser asks your permission first). This exchange stays on your computer and carries nothing but the key and the chosen model.</li>
 </ul>
 
 <h2>Web app, desktop app, add-on and command line</h2>
 <ul>
   <li>By default everything runs locally: your text is processed on your device and never uploaded.</li>
   <li>Two optional features send text to a third party only if you turn them on in Settings: the <strong>LanguageTool cloud boost</strong> sends the text being checked to <a href="https://languagetool.org/legal/privacy">LanguageTool.org</a>, and the <strong>Claude rewrite</strong> sends the text to <a href="https://www.anthropic.com/legal/privacy">Anthropic</a> using an API key you provide. Both are off by default.</li>
-  <li>Settings and your personal dictionary are saved in your browser's local storage or in the app's local data folder.</li>
+  <li>Settings and your personal dictionary are saved in your browser's local storage or in the app's local data folder. The desktop app stores your Anthropic API key encrypted by the operating system (macOS Keychain, Windows DPAPI, or the Linux desktop's secret service); the command-line tools read it from the <code>ANTHROPIC_API_KEY</code> environment variable or from <code>~/.config/writewise/config.json</code>, a file readable only by your user account. While the desktop app is running, it hands that key to the other WriteWise tools on the same computer (browser extension, command line) over a local connection that only your own user account can open; it never leaves the computer except in requests to Anthropic's API that you trigger.</li>
   <li>The Google Docs add-on reads and edits only the document it is open in and does not send document content outside Google's services.</li>
 </ul>
 

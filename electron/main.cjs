@@ -5,7 +5,13 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
 const DIST = path.join(__dirname, '..', 'dist')
-const ENGINE = path.join(__dirname, '..', 'bin', 'writewise.mjs')
+// The CLI bundle (engine, Claude rewrite, native-messaging host). In a packaged app bin/ is unpacked next to
+// app.asar (package.json > build.asarUnpack) so the browser's native-messaging host can run it as a plain file.
+const ENGINE = (() => {
+  const inAsar = path.join(__dirname, '..', 'bin', 'writewise.mjs')
+  const unpacked = inAsar.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+  return unpacked !== inAsar && require('node:fs').existsSync(unpacked) ? unpacked : inAsar
+})()
 // Global hotkeys. Cmd/Ctrl+Shift+P is left alone on purpose: it is VS Code's command palette everywhere.
 const HOTKEY = 'CommandOrControl+Shift+G'  // fix the focused box (macOS) or the clipboard
 const PROMPT_HOTKEY = 'Alt+Shift+P'         // turn the focused box (macOS) or the clipboard into an AI prompt
@@ -17,10 +23,13 @@ const SENTENCE_HOTKEY = 'Alt+Shift+G'
 const fs = require('node:fs')
 const ax = new AxHelper()
 let overlay = null
+// The Anthropic API key (OS keychain via safeStorage) and the bridge that lets the browser extension fetch it.
+const aiSettings = require('./ai-settings.cjs')
+const nativeHost = require('./native-host.cjs')
 
 // ---------- small persistent settings for the desktop shell ----------
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json')
-const shellSettings = { overlay: process.platform === 'darwin' }
+const shellSettings = { overlay: process.platform === 'darwin', nativeHost: false }
 try { Object.assign(shellSettings, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))) } catch { /* first run */ }
 function saveShellSettings() {
   try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(shellSettings, null, 2)) } catch (err) { console.warn('could not save settings', err) }
@@ -39,10 +48,16 @@ async function setOverlayEnabled(on) {
 const OWN_BUNDLES = new Set(['app.writewise.desktop', 'com.github.Electron'])
 
 // ---------- clipboard fixer (works in any app: copy, press the hotkey, paste) ----------
+let modulePromise = null
+/** The CLI bundle itself (engine, Claude rewrite, config helpers); no dictionary loaded yet. */
+function getModule() {
+  if (!modulePromise) modulePromise = import(pathToFileURL(ENGINE).href)
+  return modulePromise
+}
 let enginePromise = null
 function getEngine() {
   if (!enginePromise) {
-    enginePromise = import(pathToFileURL(ENGINE).href).then(async (m) => ({ m, checker: await m.createNodeChecker(path.join(DIST, 'dict')) }))
+    enginePromise = getModule().then(async (m) => ({ m, checker: await m.createNodeChecker(path.join(DIST, 'dict')) }))
   }
   return enginePromise
 }
@@ -306,19 +321,34 @@ async function promptifyInPlace() {
 let mainWin = null
 
 /**
- * The AI settings the user entered in the editor (Settings > Anthropic API key / model). They live in the
- * renderer's localStorage; the main process reads them through the editor window when it exists.
+ * The AI settings every consumer uses: the key the user entered under Settings, kept in the OS keychain by
+ * electron/ai-settings.cjs, or, when none is stored there, ANTHROPIC_API_KEY / ~/.config/writewise/config.json,
+ * the same places the CLI looks. Read from the store directly; the editor window is never involved.
  */
-async function getAiSettings() {
-  const win = mainWin && !mainWin.isDestroyed() ? mainWin : BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'WriteWise')
-  if (!win) return { apiKey: '', model: '' }
+function getAiSettings() {
+  return aiSettings.getAiSettings()
+}
+
+/** Registers `writewise native-host` with the browsers so the extension can fetch the key from this app. */
+async function connectBrowserExtension(interactive) {
   try {
-    const raw = await win.webContents.executeJavaScript("localStorage.getItem('writewise:settings')", true)
-    const s = raw ? JSON.parse(raw) : {}
-    return { apiKey: typeof s.aiKey === 'string' ? s.aiKey.trim() : '', model: typeof s.aiModel === 'string' && s.aiModel ? s.aiModel : 'claude-opus-5-5' }
+    let extensionIds = []
+    try {
+      const cfg = await (await getModule()).readConfig()
+      if (Array.isArray(cfg.extensionIds)) extensionIds = cfg.extensionIds
+    } catch { /* no config file */ }
+    const r = nativeHost.register({ enginePath: ENGINE, extensionIds })
+    shellSettings.nativeHost = true
+    saveShellSettings()
+    if (interactive) {
+      if (!r.browsers.length) notify('WriteWise', 'No Chromium-based browser profile found (Chrome, Brave, Edge, Arc, Chromium, Vivaldi). Open one once, then try again.')
+      else notify('WriteWise', `Registered with ${r.browsers.join(', ')}. In the WriteWise extension popup, click "Use the desktop app's key".`)
+    }
+    return r
   } catch (err) {
-    console.warn('could not read AI settings:', err.message)
-    return { apiKey: '', model: '' }
+    console.warn('native host registration failed:', err)
+    if (interactive) notify('WriteWise', 'Could not connect the browser extension: ' + (err && err.message ? err.message : err))
+    return null
   }
 }
 
@@ -330,7 +360,8 @@ function createWindow() {
     minHeight: 480,
     title: 'WriteWise',
     backgroundColor: '#f4f6f8',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    // The preload only exposes the AI-settings bridge (window.writewiseDesktop); the page stays sandboxed.
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
   mainWin = win
   win.on('closed', () => { if (mainWin === win) mainWin = null })
@@ -356,6 +387,8 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Fix clipboard text', click: fixClipboard },
         { label: 'Turn clipboard into an AI prompt', click: promptifyClipboard },
+        { type: 'separator' },
+        { label: 'Connect the browser extension (share the API key)…', click: () => connectBrowserExtension(true) },
         ...(process.platform === 'darwin' ? [
           { type: 'separator' },
           { label: 'Underline suggestions in other apps', type: 'checkbox', checked: shellSettings.overlay, click: (item) => { setOverlayEnabled(item.checked) } },
@@ -379,6 +412,8 @@ app.whenReady().then(() => {
     if (!file.startsWith(DIST)) return new Response('Forbidden', { status: 403 })
     return net.fetch(pathToFileURL(file).toString())
   })
+  // The editor reads and writes the API key through this IPC; it must exist before the window loads.
+  aiSettings.installIpc({ resolveFallback: async () => (await getModule()).resolveAiSettings() })
   buildMenu()
   createWindow()
   // Global hotkeys work even when another app (e.g. a chat window) is in front.
@@ -386,6 +421,9 @@ app.whenReady().then(() => {
   if (!globalShortcut.register(SENTENCE_HOTKEY, fixSentenceInPlace)) console.warn('Could not register', SENTENCE_HOTKEY)
   if (!globalShortcut.register(PROMPT_HOTKEY, promptifyInPlace)) console.warn('Could not register', PROMPT_HOTKEY)
   getEngine().catch((err) => console.warn('engine preload failed', err))
+  // Hand the key to the other WriteWise surfaces on this machine (browser-extension bridge, CLI) over a local socket.
+  getModule().then((m) => aiSettings.startSocketServer(m.desktopSocketPath())).catch((err) => console.warn('settings socket failed:', err.message))
+  if (shellSettings.nativeHost) connectBrowserExtension(false) // keep the registration current after an update or a move
   if (process.platform === 'darwin' && ax.available()) {
     overlay = createOverlay({ ax, getEngine, notify, getAiSettings })
     if (shellSettings.overlay) overlay.start().catch((err) => console.warn('overlay start failed', err))
@@ -393,5 +431,5 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().filter((w) => w !== toastWin).length === 0) createWindow() })
 })
 
-app.on('will-quit', () => { globalShortcut.unregisterAll(); if (overlay) overlay.stop(); ax.stop() })
+app.on('will-quit', () => { globalShortcut.unregisterAll(); if (overlay) overlay.stop(); ax.stop(); aiSettings.stopSocketServer() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

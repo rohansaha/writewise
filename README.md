@@ -9,7 +9,7 @@ Everything runs on your device. Nothing leaves your computer unless you switch o
 - **Writing mode** — real-time checks with colored wavy underlines, click-to-fix cards, "Accept all safe fixes", an overall score (0-100), tone detection (formal/casual, confident/tentative, friendly) and document statistics (reading time, readability, grade level, …).
 - **AI prompt mode** — a 7-point prompt checklist (clear task, context, role/audience, output format, constraints, examples, success criteria), vague-wording warnings, and one-click conversion into a detailed prompt (offline template, or Claude-powered with your own key).
 - **Cloud boost (optional)** — sends text to the free LanguageTool.org API for stronger grammar detection. Off by default.
-- **AI rewrite (optional)** — "Improve", "Fix grammar", "Shorten", "Make formal/casual", "Sound confident", "Simplify", or a custom instruction, powered by the Claude API using **your own Anthropic API key** (stored only on your device).
+- **AI rewrite (optional)** — "Improve", "Fix grammar", "Shorten", "Make formal/casual", "Sound confident", "Simplify", or a custom instruction, powered by the Claude API using **your own Anthropic API key** (stored only on your device, entered once for every WriteWise surface: see [One API key for every surface](#one-anthropic-api-key-for-every-surface)).
 - **Works everywhere** — a desktop app for macOS, Windows and Linux, or an installable web app (PWA) that works offline once loaded.
 - **Browser extension** — grammar fixes and auto-correct in any text box on any site, including AI chat composers (Chrome/Edge/Brave).
 - **Inside Claude** — a Claude Code hook that proofreads every prompt automatically, an MCP server for Claude Desktop, and, on macOS, Grammarly-style underlines plus an in-place fix hotkey inside any app, including Claude's chat box.
@@ -68,6 +68,30 @@ npm run build        # static site in dist/
 ```
 
 Upload `dist/` to any static host (Vercel, Netlify, GitHub Pages, S3, …). Visitors can "Install app" from their browser on desktop and mobile; after the first load it works offline.
+
+## One Anthropic API key for every surface
+
+The Claude features are optional and all use your own Anthropic API key: rewrites in the editor, the sentence card in the in-app overlay, the ⌥⇧G sentence hotkey, **Fix with Claude** in the browser extension and `writewise fix --claude` in the terminal. You enter the key once, and every WriteWise surface on the machine finds it:
+
+1. **Desktop app** — paste it under ⚙ Settings → AI rewrite. The app keeps it encrypted by the operating system (Keychain on macOS, DPAPI on Windows, the desktop's secret service on Linux; `ai-settings.json` in the app's data folder holds only the encrypted blob, readable by your account alone) and never in the editor's local storage. The editor, the overlay and the hotkeys all read that one copy, so no relaunch is needed. A key that an older version saved in the editor's local storage is moved into the keychain store on the first launch.
+2. **Browser extension** — in the popup, under *Claude (optional)*, click **Use the desktop app's key**. The desktop app must be running and have registered its bridge once (**Tools → Connect the browser extension**). The extension then asks the app for the key through Chrome's native messaging (the browser shows a one-time `nativeMessaging` permission prompt) and keeps its own copy in the browser's local extension storage, never synced. Without the desktop app, paste the key into the popup instead.
+3. **Terminal, Claude Code hook, MCP server** — export `ANTHROPIC_API_KEY`, or save the key once with `writewise key set` (it also reads the key from stdin, which keeps it out of your shell history):
+
+   ```bash
+   node bin/writewise.mjs key set sk-ant-…
+   ```
+
+   That writes `~/.config/writewise/config.json` (`XDG_CONFIG_HOME` is honoured), readable only by you:
+
+   ```json
+   { "anthropicApiKey": "sk-ant-…", "model": "claude-opus-5-5" }
+   ```
+
+   `node bin/writewise.mjs key show` says which key is in use and where it comes from; `key clear` removes the saved one.
+
+**Precedence.** The desktop app uses the key from its Settings, else `ANTHROPIC_API_KEY` (which it only sees when started from a terminal), else `config.json`. Everything else (the CLI, the hook, the MCP server, the extension bridge) uses `ANTHROPIC_API_KEY`, else the running desktop app, else `config.json`. Outside the desktop app, `WRITEWISE_AI_MODEL` or the `model` field picks the Claude model.
+
+**How the bridge works.** While the desktop app runs it answers one question, "which key and model", on a local socket that only your own user account can open (`~/.config/writewise/desktop.sock`; a per-user named pipe on Windows). `writewise native-host` is the small process the browser starts to ask it. *Connect the browser extension* writes a host manifest into each installed Chromium browser's `NativeMessagingHosts` folder (the registry on Windows) that points at a wrapper script in the app's data folder; the wrapper runs the CLI bundle with the app's own binary, so no separate Node installation is needed, and the registration is refreshed at every launch once it exists. An unpacked development build of the extension has a different ID than the store build: add it to `"extensionIds": ["…"]` in `config.json` and run *Connect the browser extension* again. Wherever the key lives, it is only ever sent to api.anthropic.com.
 
 ## Use it inside Claude
 
@@ -133,7 +157,9 @@ The first time, macOS asks you to allow WriteWise under **System Settings → Pr
 ```bash
 node bin/writewise.mjs fix notes.txt            # corrected text
 node bin/writewise.mjs fix --prompt < draft.md  # corrected text wrapped as a structured prompt
+node bin/writewise.mjs fix --claude notes.txt   # offline fixes, then Claude corrects the result with your key
 node bin/writewise.mjs check --prompt draft.md  # every suggestion with line:column
+node bin/writewise.mjs key show                 # which Anthropic key is in use, and where it comes from
 ```
 
 ## Browser extension (Chrome, Edge, Brave, Arc)
@@ -143,7 +169,8 @@ The same engine runs as a free browser extension that works in any text box on a
 - a badge on the focused text box shows the number of suggestions; click it for one-click fixes, "Fix all" and "Make it a prompt";
 - on AI chat sites, safe fixes are applied automatically as you type (autocorrect-style, never on the word you are still typing); switch it on for any other site from the popup;
 - the popup has a paste-to-fix box;
-- no network requests, no account, nothing leaves the browser.
+- optional **Fix with Claude** (popup → *Claude (optional)*): corrects the whole text box in context with your own Anthropic API key, pasted in or fetched from the desktop app in one click;
+- no network requests, no account, nothing leaves the browser, until you turn the Claude option on; then only the text you ask Claude to fix goes to api.anthropic.com, with your key.
 
 ```bash
 npm run build:ext     # builds extension-dist/
@@ -214,6 +241,12 @@ cli/mcp.ts            MCP server (proofread_text, analyze_prompt, check_text)
 src/cloud.ts          LanguageTool client
 src/ai.ts             Claude rewrite (Anthropic SDK)
 electron/main.cjs     desktop wrapper
+electron/ai-settings.cjs  the Anthropic key store (OS keychain via safeStorage) + the local socket that serves it
+electron/preload.cjs  the editor's bridge to that store
+electron/native-host.cjs  registers `writewise native-host` with the browsers (native messaging)
+cli/config.ts         ~/.config/writewise/config.json, ANTHROPIC_API_KEY, the desktop socket client
+cli/native-host.ts    `writewise native-host`: what Chrome runs when the extension asks for the key
+src/ai-core.ts        Claude prompts and the call itself (shared by the editor, the CLI and the extension)
 docs-addon/           Google Docs sidebar add-on (Apps Script; the engine and dictionary are inlined into Sidebar.html)
 public/dict/          Hunspell en-US dictionary (SCOWL license in LICENSE-dictionary-en.txt)
 ```
@@ -222,4 +255,4 @@ public/dict/          Hunspell en-US dictionary (SCOWL license in LICENSE-dictio
 
 - Local checks never touch the network.
 - Cloud boost sends the document text to LanguageTool.org only while the toggle is on.
-- AI rewrite sends only the text you choose to rewrite to api.anthropic.com, with your key. The key is saved in the app's local storage on your device.
+- AI rewrite sends only the text you choose to rewrite to api.anthropic.com, with your key. The desktop app keeps the key encrypted by the operating system's keychain; the web app keeps it in the browser's local storage; the extension keeps its copy in local (never synced) extension storage; the command-line tools read it from `ANTHROPIC_API_KEY` or an owner-only `~/.config/writewise/config.json`. While the desktop app runs, it hands the key to the other WriteWise surfaces on the same machine over a local socket that only your user account can open.
