@@ -95,7 +95,10 @@
       ],
       "category": "Office"
     },
-    "afterPack": "scripts/sign-mac.cjs"
+    "afterPack": "scripts/sign-mac.cjs",
+    "portable": {
+      "artifactName": "${productName}-${version}-${os}-${arch}-portable.${ext}"
+    }
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
