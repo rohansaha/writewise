@@ -15,6 +15,23 @@ const file = () => path.join(app.getPath('userData'), 'ai-settings.json')
 
 let cache = null // the decrypted store; dropped on every write
 
+/**
+ * Decrypts with safeStorage, retrying while it reports itself temporarily unavailable (common for a moment after
+ * launch), then falling back to the synchronous API, which works whenever the keychain is reachable.
+ */
+async function decryptKey(buf) {
+  let lastErr = null
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try { return await safeStorage.decryptStringAsync(buf) } catch (err) {
+      lastErr = err
+      if (!/temporarily unavailable/i.test(String(err && err.message))) break
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)))
+    }
+  }
+  try { if (safeStorage.isEncryptionAvailable()) return { result: safeStorage.decryptString(buf), shouldReEncrypt: false } } catch (err) { lastErr = err }
+  throw lastErr || new Error('could not decrypt')
+}
+
 async function readStore() {
   if (cache) return cache
   let raw
@@ -29,7 +46,7 @@ async function readStore() {
     let plain = false
     if (typeof j.key === 'string' && j.key) {
       if (j.encrypted) {
-        const r = await safeStorage.decryptStringAsync(Buffer.from(j.key, 'base64'))
+        const r = await decryptKey(Buffer.from(j.key, 'base64'))
         apiKey = r.result
         if (r.shouldReEncrypt) { await writeStore({ apiKey, model }); cache = null }
       } else {
@@ -39,8 +56,10 @@ async function readStore() {
     }
     return (cache = { apiKey: apiKey.trim(), model, plain, exists: true })
   } catch (err) {
+    // Never cache a failure: the keychain is often briefly unavailable right after launch, and caching it would
+    // make every feature think there is no key until the app restarts.
     console.warn('could not decrypt AI settings:', err.message)
-    return (cache = { apiKey: '', model: '', plain: false, exists: true })
+    return { apiKey: '', model: '', plain: false, exists: true }
   }
 }
 
