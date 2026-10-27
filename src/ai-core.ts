@@ -41,6 +41,8 @@ export interface RewriteRequest {
   mode: AiMode
   text: string
   instruction?: string
+  /** Overrides the mode's built-in instruction (used for prompt mode with extra context). */
+  instructionOverride?: string
   onDelta?: (partial: string) => void
   signal?: AbortSignal
 }
@@ -56,7 +58,7 @@ export function isPromptMode(mode: AiMode): boolean {
 /** Streams the rewrite through an existing SDK client; returns the final text. */
 export async function rewriteWith(client: Anthropic, p: RewriteRequest): Promise<string> {
   const system = isPromptMode(p.mode) ? PROMPT_ENGINEER_SYSTEM : EDITOR_SYSTEM
-  const instruction = p.mode === 'custom' ? (p.instruction || 'Improve this text.') : INSTRUCTIONS[p.mode]
+  const instruction = p.instructionOverride || (p.mode === 'custom' ? (p.instruction || 'Improve this text.') : INSTRUCTIONS[p.mode])
 
   const stream = client.messages.stream(
     {

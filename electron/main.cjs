@@ -119,8 +119,14 @@ async function promptifyClipboard() {
   if (!text.trim()) return notify('WriteWise', 'Copy some text first, then press the hotkey.')
   try {
     const { m, checker } = await getEngine()
-    const result = await m.fixText(checker, text, { mode: 'prompt' })
-    await clipboard.writeText(m.buildPromptTemplate(result.fixed, result.prompt))
+    const settings = await getAiSettings()
+    if (settings.apiKey) {
+      notify('WriteWise', 'Asking Claude to turn this into a prompt…')
+      await clipboard.writeText(await m.buildPromptWithClaude({ apiKey: settings.apiKey, model: settings.model, text }))
+    } else {
+      const result = await m.fixText(checker, text, { mode: 'prompt' })
+      await clipboard.writeText(m.buildPromptTemplate(result.fixed, result.prompt))
+    }
     notify('WriteWise', 'Clipboard now holds a structured AI prompt. Paste it and fill in the [brackets].')
   } catch (err) {
     notify('WriteWise', 'Could not build the prompt: ' + (err && err.message ? err.message : err))
@@ -337,12 +343,26 @@ async function promptifyInPlace() {
   if (!text.trim()) return notify('WriteWise', 'Type or select some text first.')
   try {
     const { m, checker } = await getEngine()
-    const result = await m.fixText(checker, text, { mode: 'prompt' })
-    const out = m.buildPromptTemplate(result.fixed, result.prompt)
+    const settings = await getAiSettings()
+    let out
+    let viaClaude = false
+    if (settings.apiKey) {
+      // Claude corrects the notes in context and builds the prompt from what they actually say, knowing the rest of
+      // the box and the app the prompt will be sent from.
+      notify('WriteWise', 'Asking Claude to turn this into a prompt…')
+      out = await m.buildPromptWithClaude({ apiKey: settings.apiKey, model: settings.model, text, surrounding: hasSel ? box.text : undefined, app: box.app })
+      viaClaude = true
+      const now = await focusedBox()
+      const live = now ? now.text.slice(base, base + text.length) : null
+      if (live !== text) return notify('WriteWise', 'The text changed while Claude was working; nothing was replaced.')
+    } else {
+      const result = await m.fixText(checker, text, { mode: 'prompt' })
+      out = m.buildPromptTemplate(result.fixed, result.prompt)
+    }
     const r = await ax.request({ cmd: 'replace', start: base, length: text.length, text: out })
     if (!r.ok) throw new Error(r.error || 'replace failed')
     await ax.request({ cmd: 'select', start: base + out.length, length: 0 })
-    notify('WriteWise', 'Turned the text into a structured prompt. Fill in the [brackets].')
+    notify('WriteWise', viaClaude ? 'Turned the text into a prompt with Claude. Check anything in [brackets].' : 'Turned the text into a structured prompt. Fill in the [brackets], or add an API key so Claude can fill them from context.')
   } catch (err) {
     notify('WriteWise', 'Could not build the prompt in place: ' + (err && err.message ? err.message : err))
   }

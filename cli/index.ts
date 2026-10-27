@@ -276,3 +276,30 @@ export async function rewriteSentence(p: SentenceRewriteParams): Promise<string>
   const out = await rewrite({ apiKey: p.apiKey, model: p.model, mode: 'custom', instruction, text: p.sentence, signal: p.signal })
   return out.replace(/^["'“”]+|["'“”]+$/g, '').trim()
 }
+
+
+export interface PromptBuildParams {
+  apiKey: string
+  model: string
+  /** The text to turn into a prompt (the whole box, or the selection). */
+  text: string
+  /** The whole text box it came from, when `text` is only a part of it. */
+  surrounding?: string
+  /** The app the user is typing into, e.g. "Claude" or "Slack". */
+  app?: string
+  signal?: AbortSignal
+}
+
+/**
+ * Turns rough notes into a structured prompt with Claude, using what is around them: the rest of the text box
+ * and the app it will be sent from. Spelling and grammar are corrected in context first, every section is filled
+ * from what the user actually wrote, and [brackets] are used only for details that are genuinely missing.
+ */
+export async function buildPromptWithClaude(p: PromptBuildParams): Promise<string> {
+  const where = p.app ? `The prompt will be sent to an AI assistant from the app "${p.app}"${/claude/i.test(p.app) ? ' (Claude)' : ''}.` : 'The prompt will be sent to an AI assistant.'
+  const around = p.surrounding && p.surrounding.trim() !== p.text.trim()
+    ? `\n\nThe notes are part of a longer message; use it only as context (do not turn it into the prompt):\n"""\n${p.surrounding}\n"""` : ''
+  const instructionOverride = `Turn the user's notes into a complete prompt. ${where} First correct spelling, grammar and word choice in context (for example "shud" means "should", "their going" means "they're going"). Then fill every section from what the notes and the context actually say: who and what it is about, the audience, tone, length and constraints the user stated. Use [square brackets] only for details that are truly missing and would change the answer; never bracket something the user already said. Keep it as short as the request allows: a one-line request gets a compact prompt, not a long form.${around}`
+  const { rewrite } = await import('../src/ai')
+  return rewrite({ apiKey: p.apiKey, model: p.model, mode: 'prompt', text: p.text, instructionOverride, signal: p.signal })
+}
