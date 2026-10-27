@@ -47,7 +47,8 @@ The desktop app is not signed with an Apple Developer ID, so by default every bu
 # 1. a self-signed certificate valid for code signing (10 years)
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes \
   -subj "/CN=WriteWise Local Signing" -addext "keyUsage=digitalSignature" -addext "extendedKeyUsage=codeSigning" -addext "basicConstraints=CA:false"
-openssl pkcs12 -export -inkey key.pem -in cert.pem -out writewise-signing.p12 -passout pass:writewise-local -name "WriteWise Local Signing"
+openssl pkcs12 -export -inkey key.pem -in cert.pem -out writewise-signing.p12 -passout pass:writewise-local -name "WriteWise Local Signing" \
+  -macalg sha1 -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES   # the PKCS#12 flavour `security import` accepts (Homebrew OpenSSL 4 defaults to one it rejects)
 # 2. put it in your login keychain and let codesign use it
 security import writewise-signing.p12 -k ~/Library/Keychains/login.keychain-db -P writewise-local -T /usr/bin/codesign -T /usr/bin/security
 security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db cert.pem

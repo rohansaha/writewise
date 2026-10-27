@@ -11,3 +11,5 @@ docs-addon/.clasp.json
 .vercel
 .env*
 native/build
+*.p12
+*.pem
