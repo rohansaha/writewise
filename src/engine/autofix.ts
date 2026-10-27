@@ -19,6 +19,8 @@ export function isSafeFix(issue: Issue): string | null {
   if (rep === undefined) return null
   if (issue.ruleId.startsWith('retext-spell:') || issue.ruleId.startsWith('cloud:MORFOLOGIK')) {
     if (!rep) return null
+    // Acronyms, codes and anything with a digit ("DMG", "B2B", "v2") are not typos: never rewrite them.
+    if (/^[A-Z][A-Z0-9]+$/.test(issue.actual) || /\d/.test(issue.actual)) return null
     const typo = knownTypo(issue.actual)
     if (typo) return typo
     // Never turn a lowercase word into a capitalized one ("repo" -> "Reno"): that is a proper noun, not a fix.
@@ -26,8 +28,12 @@ export function isSafeFix(issue: Issue): string | null {
     const repIsCapitalized = rep[0] !== rep[0].toLowerCase()
     if (actualIsLower && repIsCapitalized) return null
     // Only auto-correct to a frequent word that is one edit away; rare words ("docent") stay as suggestions.
-    if (rep.length >= 3 && isCommon(rep) && editDistance(issue.actual.toLowerCase(), rep.toLowerCase()) <= 1) return rep
-    return null
+    const typed = issue.actual.toLowerCase()
+    const close = (s: string) => s.length >= 3 && isCommon(s) && editDistance(typed, s.toLowerCase()) <= 1
+    if (!close(rep)) return null
+    // When several frequent words are one edit away ("shud" -> shed / shut / stud), picking one is a guess: leave it to the user.
+    if (issue.replacements.some((s) => s.toLowerCase() !== rep.toLowerCase() && close(s))) return null
+    return rep
   }
   if (issue.replacements.length !== 1) return null
   return rep

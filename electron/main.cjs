@@ -22,12 +22,12 @@ function notify(title, body) {
 }
 
 async function fixClipboard() {
-  const text = clipboard.readText()
+  const text = await clipboard.readText()
   if (!text.trim()) return notify('WriteWise', 'Copy some text first, then press the hotkey.')
   try {
     const { m, checker } = await getEngine()
     const result = await m.fixText(checker, text, { mode: 'writing' })
-    clipboard.writeText(result.fixed)
+    await clipboard.writeText(result.fixed)
     const n = result.applied.length
     notify('WriteWise', n ? `Fixed ${n} issue${n === 1 ? '' : 's'}. Paste to use the corrected text.` : 'No spelling or grammar fixes needed.')
   } catch (err) {
@@ -36,12 +36,12 @@ async function fixClipboard() {
 }
 
 async function promptifyClipboard() {
-  const text = clipboard.readText()
+  const text = await clipboard.readText()
   if (!text.trim()) return notify('WriteWise', 'Copy some text first, then press the hotkey.')
   try {
     const { m, checker } = await getEngine()
     const result = await m.fixText(checker, text, { mode: 'prompt' })
-    clipboard.writeText(m.buildPromptTemplate(result.fixed, result.prompt))
+    await clipboard.writeText(m.buildPromptTemplate(result.fixed, result.prompt))
     notify('WriteWise', 'Clipboard now holds a structured AI prompt. Paste it and fill in the [brackets].')
   } catch (err) {
     notify('WriteWise', 'Could not build the prompt: ' + (err && err.message ? err.message : err))
