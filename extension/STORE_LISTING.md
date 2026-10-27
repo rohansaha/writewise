@@ -40,14 +40,16 @@ Privacy: everything runs inside your browser. The extension makes no network req
 - Small promo tile: `promo-440x280.png` (440×280)
 - Package: `release/writewise-chrome-extension-0.1.0.zip` (built with `npm run pack:ext`)
 
-## Dashboard status (2026-10-26)
+## Dashboard status (2026-10-27)
 
-Draft item created under publisher rohansaha2222@gmail.com: ID `hmdpffagdonhmmgdcohmbkjcijiieicn`
+Draft item under publisher rohansaha2222@gmail.com: ID `hmdpffagdonhmmgdcohmbkjcijiieicn`
 (https://chrome.google.com/webstore/devconsole/8dd23e74-0276-4186-a8d8-5a23628e02df/hmdpffagdonhmmgdcohmbkjcijiieicn/edit).
-Done in the dashboard: package 0.1.0 uploaded, description, homepage/support URLs, icon, 4 screenshots, small promo tile,
-single purpose + permission justifications, "no remote code", privacy policy URL, distribution free/public/all regions.
-Still needed before "Submit for review": Category = Productivity, Language = English, the three data-usage
-certifications on the Privacy tab, and a verified publisher contact email on the Settings page.
+Everything is filled and saved: package 0.1.0, description, homepage/support URLs, icon, 4 screenshots, small promo tile,
+Category = Productivity > Tools (the store has no "Writing" subcategory), Language = English, single purpose + permission
+justifications, "no remote code", no data collected + the three certifications, privacy policy URL, distribution free/public/all
+regions. Settings: contact email verified, EEA trader declaration = non-trader. Submitted for review on 2026-10-27 with "publish automatically after review" ticked; status is now **Pending review**.
+Google warned that the `<all_urls>` host permission may trigger an in-depth review, so expect days rather than hours.
+The store listing will appear at https://chromewebstore.google.com/detail/hmdpffagdonhmmgdcohmbkjcijiieicn once approved.
 
 ## Submitting (about 10 minutes in the dashboard)
 
