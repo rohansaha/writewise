@@ -93,6 +93,7 @@ function createOverlay({ ax, getEngine, notify, getAiSettings }) {
   let pollTimer = null
   let mouseOn = false
   let aiCache = { at: 0, available: false }
+  const rewrites = new Map() // sentence text -> corrected text from Claude (so re-opening a card never re-asks)
 
   // ---------- window ----------
   function ensureWindow() {
@@ -298,8 +299,9 @@ function createOverlay({ ax, getEngine, notify, getAiSettings }) {
   })
   ipcMain.on('overlay:rewrite', async (_e, { id }) => {
     const s = sentences.find((x) => x.id === id)
-    const reply = (r) => { if (win && !win.isDestroyed()) win.webContents.send('overlay:rewrite-result', { id, ...r }) }
+    const reply = (r) => { if (win && !win.isDestroyed()) win.webContents.send('overlay:rewrite-result', { id, sentence: s ? s.sentence : undefined, ...r }) }
     if (!s || !box) return reply({ error: 'That sentence is gone.' })
+    if (rewrites.has(s.sentence)) return reply({ text: rewrites.get(s.sentence) })
     const context = box.text
     try {
       const settings = getAiSettings ? await getAiSettings() : null
@@ -307,6 +309,8 @@ function createOverlay({ ax, getEngine, notify, getAiSettings }) {
       const { m } = await getEngine()
       debug('rewrite via Claude', id, settings.model)
       const text = await m.rewriteSentence({ apiKey: settings.apiKey, model: settings.model, sentence: s.sentence, context })
+      rewrites.set(s.sentence, text)
+      if (rewrites.size > 200) rewrites.delete(rewrites.keys().next().value)
       if (!box || box.text !== context) return // the text moved on; the suggestion no longer fits
       reply({ text })
     } catch (err) {

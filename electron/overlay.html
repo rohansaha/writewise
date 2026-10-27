@@ -15,6 +15,7 @@
   .u.clarity::after, .u.tone::after, .u.prompt::after, .u.style::after { background: #f0a020; }
   .card { position: absolute; width: 360px; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; background: #fff; color: #15171a; box-shadow: 0 10px 30px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.08); z-index: 10; }
   .card h1 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
+  .card .diff .label, .card .ai .label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; opacity: .6; margin-bottom: 4px; }
   .card .diff { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #f5f6f8; line-height: 1.5; -webkit-user-select: text; }
   .card del { color: #b42318; background: #fde8e8; text-decoration: line-through; border-radius: 3px; padding: 0 1px; }
   .card ins { color: #0f6b3a; background: #dcf5e6; text-decoration: none; border-radius: 3px; padding: 0 1px; }
@@ -53,7 +54,12 @@
 <script>
   const root = document.getElementById('root')
   let state = { items: [], card: null, size: [0, 0], aiAvailable: false }
-  let ai = {}          // id -> { busy, text, error }
+  let ai = {}          // sentence text -> { busy, text, error }: Claude's correction, cached per sentence
+  function askClaude(it) {
+    if (!state.aiAvailable || ai[it.sentence]) return
+    ai[it.sentence] = { busy: true }
+    window.overlay.rewrite(it.id)
+  }
   let hovering = false
   const CARD_W = 360
   function setHover(v) { if (hovering !== v) { hovering = v; window.overlay.hover(v) } }
@@ -115,17 +121,23 @@
     const left = Math.min(Math.max(8, it.lines[0].x), Math.max(8, state.size[0] - CARD_W - 8))
     c.style.left = left + 'px'
     c.style.top = (last.y + last.h + 8) + 'px'
-    const a = ai[it.id] || {}
+    // With an API key, Claude's context-aware correction is requested as soon as the card opens and leads the
+    // card; the offline fix stays one click away. Without a key the offline fix is the suggestion.
+    askClaude(it)
+    const a = ai[it.sentence] || {}
+    const offline = it.changes > 0 && it.fixed !== it.sentence
+    const claude = a.text && a.text !== it.sentence ? a.text : null
     let body = ''
-    if (it.changes > 0) body += `<div class="diff">${diffHtml(it.sentence, it.fixed)}</div>`
-    if (it.notes.length) body += `<ul class="notes">${it.notes.map((n) => `<li><b>${esc(n.title)}.</b> ${esc(n.message)}</li>`).join('')}</ul>`
-    if (a.busy) body += `<div class="ai busy"><div class="label">Claude</div>Thinking about this sentence in context…</div>`
+    if (claude) body += `<div class="ai"><div class="label">Claude, in context</div>${diffHtml(it.sentence, claude)}</div>`
+    else if (a.text) body += `<div class="ai"><div class="label">Claude, in context</div>Nothing to change in this sentence.</div>`
+    else if (a.busy) body += `<div class="ai busy"><div class="label">Claude</div>Correcting this sentence in context…</div>`
     else if (a.error) body += `<div class="ai error"><div class="label">Claude</div>${esc(a.error)}</div>`
-    else if (a.text) body += `<div class="ai"><div class="label">Claude, in context</div>${diffHtml(it.sentence, a.text)}</div>`
+    if (offline) body += `<div class="diff">${claude || a.busy ? '<div class="label">Offline fix</div>' : ''}${diffHtml(it.sentence, it.fixed)}</div>`
+    if (it.notes.length) body += `<ul class="notes">${it.notes.map((n) => `<li><b>${esc(n.title)}.</b> ${esc(n.message)}</li>`).join('')}</ul>`
     const buttons = []
-    if (a.text && a.text !== it.sentence) buttons.push('<button class="primary" data-act="use-ai">Use Claude’s version</button>')
-    if (it.changes > 0 && it.fixed !== it.sentence) buttons.push(`<button class="${a.text ? 'secondary' : 'primary'}" data-act="fix">Fix sentence${it.changes > 1 ? ' (' + it.changes + ' changes)' : ''}</button>`)
-    if (state.aiAvailable && !a.text) buttons.push(`<button class="secondary" data-act="ai" ${a.busy ? 'disabled' : ''}>Rewrite with Claude</button>`)
+    if (claude) buttons.push('<button class="primary" data-act="use-ai">Fix sentence</button>')
+    if (offline) buttons.push(`<button class="${claude || a.busy ? 'secondary' : 'primary'}" data-act="fix">${claude || a.busy ? 'Use offline fix' : 'Fix sentence'}${it.changes > 1 ? ' (' + it.changes + ' changes)' : ''}</button>`)
+    if (state.aiAvailable && a.error) buttons.push('<button class="secondary" data-act="ai">Ask Claude again</button>')
     buttons.push('<button class="ghost" data-act="dismiss">Dismiss</button>', '<button class="ghost" data-act="close">Close</button>')
     c.innerHTML = `<h1>${it.count === 1 ? '1 suggestion' : it.count + ' suggestions'} in this sentence</h1>${body}<div class="row">${buttons.join('')}</div>`
     c.onmouseenter = () => setHover(true)
@@ -135,8 +147,8 @@
       if (!b) return
       const act = b.dataset.act
       if (act === 'fix') { window.overlay.apply(it.id, it.fixed); state.card = null; setHover(false); render() }
-      else if (act === 'use-ai') { window.overlay.apply(it.id, a.text); state.card = null; setHover(false); render() }
-      else if (act === 'ai') { ai[it.id] = { busy: true }; window.overlay.rewrite(it.id); render() }
+      else if (act === 'use-ai') { window.overlay.apply(it.id, claude); state.card = null; setHover(false); render() }
+      else if (act === 'ai') { delete ai[it.sentence]; askClaude(it); render() }
       else if (act === 'dismiss') { window.overlay.dismiss(it.id); state.card = null; setHover(false); render() }
       else closeCard()
     }
@@ -149,13 +161,15 @@
 
   window.overlay.onRender((payload) => {
     const kept = {}
-    for (const it of payload.items) if (ai[it.id]) kept[it.id] = ai[it.id]
+    for (const it of payload.items) if (ai[it.sentence]) kept[it.sentence] = ai[it.sentence]
     ai = kept
     state = payload
     render()
   })
   window.overlay.onRewrite((r) => {
-    ai[r.id] = r.error ? { error: r.error } : { text: r.text }
+    const key = r.sentence || (state.items.find((i) => i.id === r.id) || {}).sentence
+    if (!key) return
+    ai[key] = r.error ? { error: r.error } : { text: r.text }
     render()
   })
   window.overlay.debug({ loaded: true })
