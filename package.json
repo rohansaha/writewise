@@ -1,7 +1,7 @@
 {
   "name": "writewise",
   "productName": "WriteWise",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Offline-first writing assistant: grammar, spelling, clarity and tone suggestions as you type.",
   "private": true,
   "type": "module",
@@ -35,6 +35,14 @@
       "output": "release",
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "rohansaha",
+        "repo": "writewise",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "dist/**/*",
       "bin/**/*",
@@ -84,6 +92,12 @@
           "arch": [
             "x64"
           ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "native/build/axhelper.exe",
+          "to": "axhelper.exe"
         }
       ]
     },
@@ -147,5 +161,8 @@
     "type": "git",
     "url": "https://github.com/rohansaha/writewise.git"
   },
-  "homepage": "https://github.com/rohansaha/writewise#readme"
+  "homepage": "https://github.com/rohansaha/writewise#readme",
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  }
 }

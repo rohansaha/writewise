@@ -26,10 +26,12 @@ let overlay = null
 // The Anthropic API key (OS keychain via safeStorage) and the bridge that lets the browser extension fetch it.
 const aiSettings = require('./ai-settings.cjs')
 const nativeHost = require('./native-host.cjs')
+const { createUpdater } = require('./updater.cjs')
 
 // ---------- small persistent settings for the desktop shell ----------
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json')
-const shellSettings = { overlay: process.platform === 'darwin', nativeHost: false }
+const OVERLAY_PLATFORM = process.platform === 'darwin' || process.platform === 'win32'
+const shellSettings = { overlay: OVERLAY_PLATFORM, nativeHost: false }
 try { Object.assign(shellSettings, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))) } catch { /* first run */ }
 function saveShellSettings() {
   try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(shellSettings, null, 2)) } catch (err) { console.warn('could not save settings', err) }
@@ -45,7 +47,7 @@ async function setOverlayEnabled(on) {
   if (ok) notify('WriteWise', 'Suggestions will be underlined in other apps as you type.')
 }
 // Text boxes inside WriteWise itself are handled by its own editor; never rewrite them from outside.
-const OWN_BUNDLES = new Set(['app.writewise.desktop', 'com.github.Electron'])
+const OWN_BUNDLES = new Set(['app.writewise.desktop', 'com.github.Electron', 'writewise.exe', 'electron.exe'])
 
 // ---------- clipboard fixer (works in any app: copy, press the hotkey, paste) ----------
 let modulePromise = null
@@ -99,6 +101,8 @@ function notify(title, body) {
   try { toast(title, body) } catch (err) { console.warn('toast failed', err) }
   try { if (Notification.isSupported()) new Notification({ title, body, silent: true }).show() } catch { /* notifications unavailable */ }
 }
+// New versions from GitHub Releases (installed on quit on Windows and in the Linux AppImage; announced on macOS).
+const updater = createUpdater({ notify })
 
 async function fixClipboard() {
   const text = await clipboard.readText()
@@ -439,16 +443,21 @@ function buildMenu() {
         { label: 'Turn clipboard into an AI prompt', click: promptifyClipboard },
         { type: 'separator' },
         { label: 'Connect the browser extension (share the API key)…', click: () => connectBrowserExtension(true) },
-        ...(process.platform === 'darwin' ? [
+        ...(OVERLAY_PLATFORM && ax.available() ? [
           { type: 'separator' },
           { label: 'Underline suggestions in other apps', type: 'checkbox', checked: shellSettings.overlay, click: (item) => { setOverlayEnabled(item.checked) } },
-          { label: 'Open Accessibility settings…', click: () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility') },
+          ...(isMac ? [{ label: 'Open Accessibility settings…', click: () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility') }] : []),
         ] : []),
       ],
     },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
-    { role: 'help', submenu: [{ label: 'WriteWise on GitHub', click: () => shell.openExternal('https://github.com/') }] },
+    { role: 'help', submenu: [
+      { label: 'Check for updates…', click: () => updater.checkNow() },
+      { label: `Version ${app.getVersion()}`, enabled: false },
+      { type: 'separator' },
+      { label: 'WriteWise on GitHub', click: () => shell.openExternal('https://github.com/rohansaha/writewise') },
+    ] },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -474,7 +483,8 @@ app.whenReady().then(() => {
   // Hand the key to the other WriteWise surfaces on this machine (browser-extension bridge, CLI) over a local socket.
   getModule().then((m) => aiSettings.startSocketServer(m.desktopSocketPath())).catch((err) => console.warn('settings socket failed:', err.message))
   if (shellSettings.nativeHost) connectBrowserExtension(false) // keep the registration current after an update or a move
-  if (process.platform === 'darwin' && ax.available()) {
+  updater.start()
+  if (OVERLAY_PLATFORM && ax.available()) {
     overlay = createOverlay({ ax, getEngine, notify, getAiSettings })
     if (shellSettings.overlay) overlay.start().catch((err) => console.warn('overlay start failed', err))
   }

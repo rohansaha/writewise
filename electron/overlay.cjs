@@ -1,4 +1,4 @@
-// Grammarly-style suggestions in any app (macOS), sentence by sentence.
+// Grammarly-style suggestions in any app (macOS and Windows), sentence by sentence.
 //
 // The Accessibility helper streams the focused text box of the app in front (focus / text / moved /
 // blur events). After a pause in typing the text is checked, the findings are grouped by sentence,
@@ -11,8 +11,10 @@
 const { BrowserWindow, screen, ipcMain } = require('electron')
 const path = require('node:path')
 
-const OWN_BUNDLES = new Set(['app.writewise.desktop', 'com.github.Electron'])
-const AI_CHAT_BUNDLES = new Set(['com.anthropic.claudefordesktop', 'com.openai.chat'])
+// macOS bundle ids and Windows executable names (the Windows helper reports those as `bundle`).
+const OWN_BUNDLES = new Set(['app.writewise.desktop', 'com.github.Electron', 'writewise.exe', 'electron.exe'])
+const AI_CHAT_BUNDLES = new Set(['com.anthropic.claudefordesktop', 'com.openai.chat', 'claude.exe', 'chatgpt.exe'])
+const IS_MAC = process.platform === 'darwin'
 const MAX_ISSUES = 120
 const CHECK_DELAY_MS = 650
 const debug = (...a) => { if (process.env.WRITEWISE_DEBUG) console.log('[overlay]', ...a) }
@@ -99,11 +101,13 @@ function createOverlay({ ax, getEngine, notify, getAiSettings }) {
   function ensureWindow() {
     if (win) return win
     win = new BrowserWindow({
-      // 'panel' makes it a non-activating NSPanel: clicking it never brings WriteWise to the front, so the app
-      // being edited stays active. It must stay focusable, though: a non-focusable panel accepts the mouse but
-      // never delivers clicks to its page. The panel is hidden again as soon as a fix is applied or dismissed.
-      type: 'panel',
-      show: false, frame: false, transparent: true, alwaysOnTop: true, focusable: true, hasShadow: false,
+      // macOS: 'panel' makes it a non-activating NSPanel: clicking it never brings WriteWise to the front, so the
+      // app being edited stays active. It must stay focusable, though: a non-focusable panel accepts the mouse but
+      // never delivers clicks to its page. Windows: a non-focusable window (WS_EX_NOACTIVATE) still gets clicks
+      // and never takes the foreground, which the keystrokes that apply a fix depend on.
+      // The panel is hidden again as soon as a fix is applied or dismissed.
+      ...(IS_MAC ? { type: 'panel' } : {}),
+      show: false, frame: false, transparent: true, alwaysOnTop: true, focusable: IS_MAC, hasShadow: false,
       skipTaskbar: true, resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
       acceptFirstMouse: true,
       webPreferences: { preload: path.join(__dirname, 'overlay-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
@@ -336,7 +340,8 @@ function createOverlay({ ax, getEngine, notify, getAiSettings }) {
   let trustTimer = null
   let prompted = false
   /**
-   * Turns the overlay on. Resolves false when macOS has not granted Accessibility access yet; in that case the
+   * Turns the overlay on. Resolves false when macOS has not granted Accessibility access yet (Windows needs no
+   * permission, so the helper always reports trusted there); in that case the
    * system prompt is shown once and the permission is re-checked every few seconds, so the suggestions start as
    * soon as the user flips the switch, with no relaunch.
    */

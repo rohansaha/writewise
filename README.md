@@ -132,9 +132,9 @@ Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config
 
 Tools exposed: `proofread_text`, `analyze_prompt` (prompt score, missing elements, vague words, structured version) and `check_text`. To make Claude use it on every message, add a line to your profile preferences or project instructions such as: *"Before answering, call writewise's `analyze_prompt` on my message and work from the corrected, structured version."*
 
-### 3. Any app, including Claude's chat box: underlines and in-place fixes (macOS)
+### 3. Any app, including Claude's chat box: underlines and in-place fixes (macOS and Windows)
 
-With the desktop app running on macOS, WriteWise works inside other apps the way Grammarly does, through the macOS Accessibility API:
+With the desktop app running on macOS or Windows, WriteWise works inside other apps the way Grammarly does, through the macOS Accessibility API or Windows UI Automation (on Windows, read ⌘ as Ctrl and ⌥ as Alt below):
 
 - **Sentence suggestions as you type.** Pause for a moment in any text box (Claude, Slack, Mail, Chrome, a native text view) and each sentence with a problem is highlighted in place, with the flagged words underlined inside it. Click the sentence for a card that shows the corrected sentence as a whole (changes marked) and applies it with one click; findings without a fix (passive voice, hard to read) are listed as notes. With an Anthropic API key in Settings, the card leads with Claude's correction: as soon as it opens, Claude corrects the sentence using the whole message as context, so "their/there", tense and agreement are judged in context, and **Fix sentence** applies that version (the offline fix stays one click away). Each sentence is sent once; nothing is sent until you open its card. **Dismiss** hides that sentence's suggestions. Turn the feature off or on under **Tools → Underline suggestions in other apps**.
 - **⌘⇧G** fixes the text box that has focus, in place, keeping your caret where it was. Select part of the text first to fix only that part. **⌥⇧P** rewrites the box (or the selection) into a structured AI prompt with `[placeholders]` for whatever is missing.
@@ -144,13 +144,13 @@ With the desktop app running on macOS, WriteWise works inside other apps the way
 
 | Action | macOS | Windows / Linux |
 |---|---|---|
-| Fix the focused text box in place (macOS); fix the clipboard elsewhere | ⌘⇧G | Ctrl+Shift+G |
-| Fix the sentence at the cursor in place (macOS); fix the copied sentence elsewhere. Claude when a key is set | ⌥⇧G | Alt+Shift+G |
-| Turn the box (macOS) or the clipboard into a structured AI prompt | ⌥⇧P | Alt+Shift+P |
+| Fix the focused text box in place (macOS, Windows); fix the clipboard on Linux | ⌘⇧G | Ctrl+Shift+G |
+| Fix the sentence at the cursor in place (macOS, Windows); fix the copied sentence on Linux. Claude when a key is set | ⌥⇧G | Alt+Shift+G |
+| Turn the box (macOS, Windows) or the clipboard (Linux) into a structured AI prompt | ⌥⇧P | Alt+Shift+P |
 
-On Windows and Linux there is no in-app overlay and no in-place editing yet (both need the macOS Accessibility helper), so the flow is: copy, press the hotkey, paste. The web app, the Chrome extension and the Claude Code hook work the same on every platform.
+On Windows the overlay and in-place editing use UI Automation through a small helper (`native/axhelper-win.cs`, compiled by `npm run build:axhelper` with the C# compiler built into Windows, so no SDK is needed). Windows asks for no permission, but apps running as administrator cannot be read from WriteWise unless WriteWise also runs as administrator. Fixes are typed into the box as keystrokes, so the app's own undo (Ctrl+Z) reverts them. Linux has no overlay or in-place editing yet; there the flow is copy, press the hotkey, paste. The web app, the Chrome extension and the Claude Code hook work the same on every platform.
 
-The first time, macOS asks you to allow WriteWise under **System Settings → Privacy & Security → Accessibility**; nothing works in other apps until that switch is on (the Tools menu has a shortcut to it). Password fields are never read or changed, and everything runs offline. Where no text box has focus, or on Windows and Linux, both hotkeys fall back to fixing the clipboard: copy, press the hotkey, paste.
+The first time, macOS asks you to allow WriteWise under **System Settings → Privacy & Security → Accessibility**; nothing works in other apps until that switch is on (the Tools menu has a shortcut to it). Password fields are never read or changed, and everything runs offline. Where no text box has focus, or on Linux, both hotkeys fall back to fixing the clipboard: copy, press the hotkey, paste. **Tools → Underline suggestions in other apps** turns the overlay off and on (macOS and Windows).
 
 ### Command line
 
