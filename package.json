@@ -110,7 +110,8 @@
         "AppImage",
         "deb"
       ],
-      "category": "Office"
+      "category": "Office",
+      "maintainer": "Rohan Saha <rohansaha@users.noreply.github.com>"
     },
     "afterPack": "scripts/sign-mac.cjs",
     "portable": {
